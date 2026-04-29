@@ -12,9 +12,20 @@
   "license": "ISC",
   "dependencies": {
     "@google/genai": "^1.50.1",
+    "@ilovepdf/ilovepdf-nodejs": "^0.3.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "openai": "^6.35.0"
+    "multer": "^2.1.1",
+    "openai": "^6.35.0",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^25.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
   }
 }
