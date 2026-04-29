@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { saveToHistory } from "../utils/history";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import SignatureScreen from "react-native-signature-canvas";
 
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -42,10 +44,11 @@ import {
   Eye,
   Crown,
   Brain,
-  Copy,
 } from "lucide-react-native";
 
-const AI_API_URL = "http://192.168.0.36:3000/ai/pdf-tools";
+
+const FREE_LIMITS_KEY = "PDF_FREE_LIMITS";
+const BATCH_FREE_LIMIT = 3;
 
 const presets = [
   "WhatsApp 16MB",
@@ -69,7 +72,7 @@ const titles: Record<string, string> = {
   protect: "Proteger PDF",
   unlock: "Desbloquear PDF",
   sign: "Assinar PDF",
-  watermark: "Marca d’água",
+  watermark: "Marca d'água",
   ocr: "OCR com IA",
   preview: "Visualizar PDF",
   premium: "Premium",
@@ -77,13 +80,51 @@ const titles: Record<string, string> = {
 
 function formatBytes(bytes?: number | null) {
   if (!bytes) return "Tamanho desconhecido";
-
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
+
+// ── Helpers de limite ──────────────────────────────────────────
+
+async function getLimits() {
+  const raw = await AsyncStorage.getItem(FREE_LIMITS_KEY);
+  const today = new Date().toDateString();
+
+  const defaults = {
+    compress: { date: today, used: 0, limit: 3 },
+    ocr: { date: today, used: 0, limit: 2 },
+  };
+
+  if (!raw) return defaults;
+
+  const parsed = JSON.parse(raw);
+
+  return {
+    compress:
+      parsed.compress?.date === today
+        ? parsed.compress
+        : { date: today, used: 0, limit: 3 },
+    ocr:
+      parsed.ocr?.date === today
+        ? parsed.ocr
+        : { date: today, used: 0, limit: 2 },
+  };
+}
+
+async function incrementLimit(key: "compress" | "ocr") {
+  const limits = await getLimits();
+  limits[key].used += 1;
+  await AsyncStorage.setItem(FREE_LIMITS_KEY, JSON.stringify(limits));
+}
+
+async function checkLimit(key: "compress" | "ocr"): Promise<boolean> {
+  const limits = await getLimits();
+  return limits[key].used < limits[key].limit;
+}
+
+// ──────────────────────────────────────────────────────────────
 
 export default function ActionScreen() {
   const params = useLocalSearchParams<{
@@ -94,6 +135,9 @@ export default function ActionScreen() {
 
   const type = params.type ?? "compress";
 
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [signatureUri, setSignatureUri] = useState<string | null>(null);   
+
   const [selectedPreset, setSelectedPreset] = useState(presets[0]);
   const [fileName, setFileName] = useState<string | null>(params.name ?? null);
   const [fileUri, setFileUri] = useState<string | null>(params.uri ?? null);
@@ -103,6 +147,8 @@ export default function ActionScreen() {
   const [outputUri, setOutputUri] = useState<string | null>(params.uri ?? null);
   const [processed, setProcessed] = useState(!!params.uri);
   const [loading, setLoading] = useState(false);
+   const API_BASE_URL = "https://pdf-tool-production-8163.up.railway.app";
+   const AI_API_URL = `${API_BASE_URL}/ai/pdf-tools`;
 
   const [password, setPassword] = useState("");
   const [watermarkText, setWatermarkText] = useState("");
@@ -111,6 +157,7 @@ export default function ActionScreen() {
   const [ocrText, setOcrText] = useState("");
   const [aiResult, setAiResult] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const SAVED_SIGNATURE_KEY = "PDF_SAVED_SIGNATURE_URI";
 
   const title = useMemo(() => titles[type] ?? "Processar arquivo", [type]);
 
@@ -130,31 +177,18 @@ export default function ActionScreen() {
     if (type === "ocr") return <ScanText size={26} color="#007AFF" />;
     if (type === "preview") return <Eye size={26} color="#007AFF" />;
     if (type === "premium") return <Crown size={26} color="#B45309" />;
-
     return <File size={26} color="#007AFF" />;
   }, [type]);
 
   const subtitle = useMemo(() => {
-    if (type === "ocr") {
+    if (type === "ocr")
       return "Extraia texto de imagens e use IA para resumir, explicar ou gerar perguntas.";
-    }
-
-    if (type === "smart-picker") {
+    if (type === "smart-picker")
       return "Selecione um arquivo e o app sugere a melhor ação.";
-    }
-
-    if (type === "batch") {
-      return "Selecione vários arquivos para processar em lote.";
-    }
-
-    if (type === "preview") {
-      return "Abra, confira e compartilhe seu PDF.";
-    }
-
-    if (type === "premium") {
-      return "Libere processamento ilimitado e ferramentas avançadas.";
-    }
-
+    if (type === "batch")
+      return `Selecione até ${BATCH_FREE_LIMIT} arquivos no plano grátis.`;
+    if (type === "preview") return "Abra, confira e compartilhe seu PDF.";
+    if (type === "premium") return "Libere processamento ilimitado e ferramentas avançadas.";
     return "Escolha o arquivo e processe em segundos.";
   }, [type]);
 
@@ -183,7 +217,6 @@ export default function ActionScreen() {
 
       if (assets.length === 1) {
         const file = assets[0];
-
         setFileName(file.name);
         setFileUri(file.uri);
         setFileSize(file.size ?? null);
@@ -247,12 +280,8 @@ export default function ActionScreen() {
       const allPdf = files.every((f) =>
         String(f.mimeType || f.name).toLowerCase().includes("pdf")
       );
-
       if (allPdf) {
-        Alert.alert(
-          "Sugestão",
-          "Você selecionou vários PDFs. A melhor ação parece ser: Juntar PDFs."
-        );
+        Alert.alert("Sugestão", "Você selecionou vários PDFs. A melhor ação parece ser: Juntar PDFs.");
         return;
       }
     }
@@ -262,30 +291,31 @@ export default function ActionScreen() {
     const mime = String(first?.mimeType ?? "").toLowerCase();
 
     if (mime.includes("image") || name.endsWith(".jpg") || name.endsWith(".png")) {
-      Alert.alert(
-        "Sugestão",
-        "Você selecionou uma imagem. A melhor ação parece ser: Imagem para PDF ou OCR."
-      );
+      Alert.alert("Sugestão", "Você selecionou uma imagem. A melhor ação parece ser: Imagem para PDF ou OCR.");
       return;
     }
 
     if (first?.size && first.size > 10 * 1024 * 1024) {
-      Alert.alert(
-        "Sugestão",
-        "Esse PDF parece grande. A melhor ação parece ser: Comprimir PDF."
-      );
+      Alert.alert("Sugestão", "Esse PDF parece grande. A melhor ação parece ser: Comprimir PDF.");
       return;
     }
 
-    Alert.alert(
-      "Sugestão",
-      "Arquivo identificado. Você pode comprimir, dividir, proteger ou compartilhar."
-    );
+    Alert.alert("Sugestão", "Arquivo identificado. Você pode comprimir, dividir, proteger ou compartilhar.");
   }
 
   async function runOCR() {
     if (!fileUri) {
       Alert.alert("Selecione uma imagem primeiro.");
+      return;
+    }
+
+    // ── Gate de limite ──
+    const allowed = await checkLimit("ocr");
+    if (!allowed) {
+      Alert.alert(
+        "Limite diário atingido",
+        "Você usou seus 2 OCRs gratuitos de hoje. Assine o Premium para uso ilimitado."
+      );
       return;
     }
 
@@ -303,6 +333,8 @@ export default function ActionScreen() {
 
       setOcrText(text);
       setProcessed(true);
+
+      await incrementLimit("ocr");
 
       Alert.alert("OCR concluído", "Texto extraído com sucesso.");
     } catch {
@@ -326,27 +358,16 @@ export default function ActionScreen() {
 
       const response = await fetch(AI_API_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action,
-          text: ocrText,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, text: ocrText }),
       });
 
-      if (!response.ok) {
-        throw new Error("AI request failed");
-      }
+      if (!response.ok) throw new Error("AI request failed");
 
       const data = await response.json();
-
       setAiResult(data.result ?? "A IA não retornou resultado.");
     } catch {
-      Alert.alert(
-        "Erro na IA",
-        "Não foi possível usar a IA agora. Verifique sua API."
-      );
+      Alert.alert("Erro na IA", "Não foi possível usar a IA agora. Verifique sua API.");
     } finally {
       setAiLoading(false);
     }
@@ -374,38 +395,22 @@ export default function ActionScreen() {
           <style>
             body { margin: 0; padding: 0; background: #ffffff; }
             .page {
-              width: 100%;
-              height: 100vh;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 24px;
-              box-sizing: border-box;
-              page-break-after: always;
+              width: 100%; height: 100vh;
+              display: flex; align-items: center; justify-content: center;
+              padding: 24px; box-sizing: border-box; page-break-after: always;
             }
-            img {
-              max-width: 100%;
-              max-height: 100%;
-              object-fit: contain;
-            }
+            img { max-width: 100%; max-height: 100%; object-fit: contain; }
           </style>
         </head>
         <body>${htmlImages}</body>
       </html>
     `;
 
-    const pdf = await Print.printToFileAsync({
-      html,
-      base64: false,
-    });
-
+    const pdf = await Print.printToFileAsync({ html, base64: false });
     const newFileName = `pdftoolkit-${Date.now()}.pdf`;
     const newUri = `${FileSystem.documentDirectory}${newFileName}`;
 
-    await FileSystem.copyAsync({
-      from: pdf.uri,
-      to: newUri,
-    });
+    await FileSystem.copyAsync({ from: pdf.uri, to: newUri });
 
     return newUri;
   }
@@ -420,22 +425,16 @@ export default function ActionScreen() {
       return null;
     }
 
-    const safeName = `${actionName
-      .toLowerCase()
-      .replace(/\s+/g, "-")}-${Date.now()}.pdf`;
-
+    const safeName = `${actionName.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.pdf`;
     const newUri = `${FileSystem.documentDirectory}${safeName}`;
 
-    await FileSystem.copyAsync({
-      from: fileUri,
-      to: newUri,
-    });
+    await FileSystem.copyAsync({ from: fileUri, to: newUri });
 
     return newUri;
   }
 
-  async function protectPdfWithPassword(pdfUri: string, password: string) {
-  if (!password.trim()) {
+ async function protectPdfWithPassword(pdfUri: string, pwd: string) {
+  if (!pwd.trim()) {
     Alert.alert("Senha obrigatória", "Digite uma senha para proteger o PDF.");
     return null;
   }
@@ -448,25 +447,201 @@ export default function ActionScreen() {
     type: "application/pdf",
   } as any);
 
-  formData.append("password", password);
+  formData.append("password", pwd);
 
-  const response = await fetch("http://192.168.0.36:3000/pdf/protect", {
+  const response = await fetch(`${API_BASE_URL}/pdf/protect`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) throw new Error("Erro ao proteger PDF.");
+
+  const data = await response.json();
+
+  const fileUrl = data.fileUrl;
+
+  if (!fileUrl) {
+    throw new Error("Backend não retornou fileUrl.");
+  }
+
+  const localName = `protected-${Date.now()}.pdf`;
+  const localUri = `${FileSystem.documentDirectory}${localName}`;
+
+  const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+  return downloaded.uri;
+}
+
+async function unlockPdfWithPassword(pdfUri: string, pwd: string) {
+  if (!pwd.trim()) {
+    Alert.alert("Senha obrigatória", "Digite a senha atual do PDF.");
+    return null;
+  }
+
+  const formData = new FormData();
+
+  formData.append("file", {
+    uri: pdfUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+
+  formData.append("password", pwd);
+
+  const response = await fetch(`${API_BASE_URL}/pdf/unlock`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) throw new Error("Erro ao desbloquear PDF.");
+
+  const data = await response.json();
+
+  const localName = `unlocked-${Date.now()}.pdf`;
+  const localUri = `${FileSystem.documentDirectory}${localName}`;
+
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  return downloaded.uri;
+}
+
+async function saveSignatureToFile(signatureBase64: string) {
+  const cleanBase64 = signatureBase64.replace("data:image/png;base64,", "");
+
+  const path = `${FileSystem.cacheDirectory}signature-${Date.now()}.png`;
+
+  await FileSystem.writeAsStringAsync(path, cleanBase64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return path;
+}
+
+async function signPdfWithSignature(pdfUri: string, signUri: string) {
+  const formData = new FormData();
+
+  formData.append("file", {
+    uri: pdfUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+
+  formData.append("signature", {
+    uri: signUri,
+    name: "signature.png",
+    type: "image/png",
+  } as any);
+
+  formData.append("page", "1");
+  formData.append("x", "350");
+  formData.append("y", "80");
+  formData.append("width", "160");
+  formData.append("height", "70");
+
+  const response = await fetch(`${API_BASE_URL}/pdf/sign`, {
     method: "POST",
     body: formData,
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao proteger PDF.");
+    throw new Error("Erro ao assinar PDF.");
   }
 
   const data = await response.json();
 
-  return data.uri ?? data.fileUrl;
+  if (!data.fileUrl) {
+    throw new Error("Backend não retornou fileUrl.");
+  }
+
+  const localName = `signed-${Date.now()}.pdf`;
+  const localUri = `${FileSystem.documentDirectory}${localName}`;
+
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  return downloaded.uri;
 }
+
+async function handleSignatureOK(signatureBase64: string) {
+  try {
+    const savedUri = await saveSignatureToFile(signatureBase64);
+
+    setSignatureUri(savedUri);
+
+    await AsyncStorage.setItem(SAVED_SIGNATURE_KEY, savedUri);
+
+    setShowSignaturePad(false);
+    setLoading(true);
+
+    if (!fileUri) {
+      Alert.alert("Erro", "PDF não encontrado.");
+      return;
+    }
+
+    const signedUri = await signPdfWithSignature(fileUri, savedUri);
+
+    setOutputUri(signedUri);
+    setProcessed(true);
+
+    await saveToHistory({
+      id: Date.now().toString(),
+      name: `assinado-${fileName ?? "arquivo.pdf"}`,
+      uri: signedUri,
+      date: new Date().toISOString(),
+      size: fileSize,
+    });
+
+    Alert.alert("PDF assinado", "Sua assinatura foi salva e aplicada ao PDF.");
+  } catch (error) {
+    console.log("Erro ao finalizar assinatura:", error);
+    Alert.alert("Erro", "Não foi possível finalizar a assinatura.");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function loadSavedSignature() {
+  const saved = await AsyncStorage.getItem(SAVED_SIGNATURE_KEY);
+
+  if (saved) {
+    setSignatureUri(saved);
+    Alert.alert("Assinatura carregada", "Sua assinatura salva será usada.");
+    return true;
+  }
+
+  return false;
+}
+
 async function processFile() {
   const hasGalleryImages = selectedImages.length > 0;
   const hasSelectedFile = !!fileUri || selectedFiles.length > 0;
+  const saved = await AsyncStorage.getItem(SAVED_SIGNATURE_KEY);
 
+  if (saved && !signatureUri) {
+  Alert.alert(
+    "Assinatura salva encontrada",
+    "Deseja usar sua assinatura salva?",
+    [
+      {
+        text: "Usar",
+        onPress: () => {
+          setSignatureUri(saved);
+          processFile(); // continua fluxo
+        },
+      },
+      {
+        text: "Nova assinatura",
+        onPress: () => {
+          setShowSignaturePad(true);
+        },
+      },
+    ]
+  );
+
+  setLoading(false);
+  return;
+}
+
+  
   if (type === "premium") {
     Alert.alert(
       "Premium",
@@ -480,6 +655,11 @@ async function processFile() {
     return;
   }
 
+  if (type === "preview") {
+    await shareFile();
+    return;
+  }
+
   if (type !== "image-to-pdf" && !hasSelectedFile) {
     Alert.alert("Selecione um arquivo primeiro.");
     return;
@@ -490,9 +670,30 @@ async function processFile() {
     return;
   }
 
+  if (type === "batch") {
+    const count = selectedFiles.length || 1;
+
+    if (count > BATCH_FREE_LIMIT) {
+      Alert.alert(
+        "Limite do plano grátis",
+        `Você selecionou ${count} arquivos. O plano grátis permite até ${BATCH_FREE_LIMIT}.`
+      );
+      return;
+    }
+
+    Alert.alert("Modo lote pronto", `${count} arquivo(s) selecionado(s).`);
+    return;
+  }
+
+  if (type === "smart-picker") {
+    Alert.alert("Ação inteligente", "Sugestão já exibida.");
+    return;
+  }
+
   try {
     setLoading(true);
 
+    /* 🔒 PROTECT */
     if (type === "protect") {
       if (!fileUri) {
         Alert.alert("Selecione um PDF primeiro.");
@@ -500,7 +701,6 @@ async function processFile() {
       }
 
       const protectedUri = await protectPdfWithPassword(fileUri, password);
-
       if (!protectedUri) return;
 
       setOutputUri(protectedUri);
@@ -518,6 +718,127 @@ async function processFile() {
       return;
     }
 
+    
+
+    /* 💧 WATERMARK */
+    if (type === "watermark") {
+      if (!fileUri) {
+        Alert.alert("Selecione um PDF primeiro.");
+        return;
+      }
+
+      if (!watermarkText.trim()) {
+        Alert.alert("Digite o texto da marca d'água.");
+        return;
+      }
+
+      const newUri = await addWatermark(fileUri, watermarkText.trim());
+
+      setOutputUri(newUri);
+      setProcessed(true);
+
+      await saveToHistory({
+        id: Date.now().toString(),
+        name: `marca-dagua-${fileName ?? "arquivo.pdf"}`,
+        uri: newUri,
+        date: new Date().toISOString(),
+        size: fileSize,
+      });
+
+      Alert.alert("Marca d'água aplicada");
+      return;
+    }
+
+    /* 🔓 UNLOCK */
+    if (type === "unlock") {
+      if (!fileUri) {
+        Alert.alert("Selecione um PDF primeiro.");
+        return;
+      }
+
+      const unlockedUri = await unlockPdfWithPassword(fileUri, password);
+      if (!unlockedUri) return;
+
+      setOutputUri(unlockedUri);
+      setProcessed(true);
+
+      await saveToHistory({
+        id: Date.now().toString(),
+        name: `desbloqueado-${fileName ?? "arquivo.pdf"}`,
+        uri: unlockedUri,
+        date: new Date().toISOString(),
+        size: fileSize,
+      });
+
+      Alert.alert("PDF desbloqueado", "Seu PDF foi desbloqueado com sucesso.");
+      return;
+    }
+
+    /* ✍️ SIGN */
+   if (type === "sign") {
+  if (!fileUri) {
+    Alert.alert("Selecione um PDF primeiro.");
+    return;
+  }
+
+  const saved = await AsyncStorage.getItem(SAVED_SIGNATURE_KEY);
+
+  if (saved) {
+    setLoading(false);
+
+    Alert.alert(
+      "Assinatura salva encontrada",
+      "Deseja usar sua assinatura salva?",
+      [
+        {
+          text: "Usar",
+          onPress: async () => {
+            try {
+              setLoading(true);
+
+              setSignatureUri(saved);
+
+              const signedUri = await signPdfWithSignature(fileUri, saved);
+
+              setOutputUri(signedUri);
+              setProcessed(true);
+
+              await saveToHistory({
+                id: Date.now().toString(),
+                name: `assinado-${fileName ?? "arquivo.pdf"}`,
+                uri: signedUri,
+                date: new Date().toISOString(),
+                size: fileSize,
+              });
+
+              Alert.alert("PDF assinado", "Sua assinatura salva foi usada.");
+            } catch (error) {
+              console.log("Erro ao usar assinatura salva:", error);
+              Alert.alert("Erro", "Não foi possível usar a assinatura salva.");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+        {
+          text: "Nova assinatura",
+          onPress: () => {
+            setSignatureUri(null);
+            setShowSignaturePad(true);
+          },
+        },
+      ]
+    );
+
+    return;
+  }
+
+  setLoading(false);
+  setShowSignaturePad(true);
+  return;
+}
+
+    /* 🖼 IMAGE → PDF */
     if (type === "image-to-pdf") {
       const pdfUri = hasGalleryImages
         ? await imagesToPdf(selectedImages)
@@ -536,32 +857,10 @@ async function processFile() {
       Alert.alert("PDF criado", "Seu PDF foi gerado com sucesso.");
       return;
     }
-    
-    if (type === "preview") {
-      await shareFile();
-      setProcessed(true);
-      return;
-    }
 
-    if (type === "smart-picker") {
-      Alert.alert(
-        "Ação inteligente",
-        "A sugestão já foi exibida. Agora você pode entrar diretamente na ferramenta indicada."
-      );
-      return;
-    }
-
-    if (type === "batch") {
-      Alert.alert(
-        "Modo lote pronto",
-        `${selectedFiles.length || 1} arquivo(s) selecionado(s).\n\nA tela já aceita múltiplos arquivos.`
-      );
-      return;
-    }
-
+    /* 📉 COMPRESS */
     if (type === "compress") {
       const newUri = await fakeCopyPdf("compress");
-
       if (!newUri) return;
 
       setOutputUri(newUri);
@@ -575,16 +874,11 @@ async function processFile() {
         size: fileSize,
       });
 
-      Alert.alert(
-        "Compressão simulada",
-        `Fluxo pronto.\n\nPreset: ${selectedPreset}\nArquivo: ${
-          fileSize ? formatBytes(fileSize) : "tamanho desconhecido"
-        }\n\nPara comprimir de verdade, precisa ligar uma lib nativa de PDF.`
-      );
-
+      Alert.alert("Compressão simulada");
       return;
     }
 
+    /* 📄 FALLBACK */
     const newUri = await fakeCopyPdf(type);
 
     if (newUri) {
@@ -600,28 +894,48 @@ async function processFile() {
       });
     }
 
-    Alert.alert(
-      "Ferramenta preparada",
-      "Tela pronta. Agora falta conectar a função real de PDF."
-    );
-  } catch {
+    Alert.alert("Ferramenta preparada");
+  } catch (error) {
+    console.log("Erro processFile:", error);
     Alert.alert("Erro", "Não foi possível processar o arquivo.");
   } finally {
     setLoading(false);
   }
 }
 
+async function addWatermark(pdfUri: string, text: string) {
+  const formData = new FormData();
+
+  formData.append("file", {
+    uri: pdfUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+
+  formData.append("text", text);
+
+  const response = await fetch(`${API_BASE_URL}/pdf/watermark`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await response.json();
+
+  const localName = `watermark-${Date.now()}.pdf`;
+  const localUri = `${FileSystem.documentDirectory}${localName}`;
+
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+ 
+
+  return downloaded.uri;
+}
+
   async function shareFile() {
     const uriToShare = outputUri ?? fileUri;
-
     if (!uriToShare) return;
 
     const available = await Sharing.isAvailableAsync();
-
-    if (!available) {
-      Alert.alert("Compartilhamento indisponível");
-      return;
-    }
+    if (!available) { Alert.alert("Compartilhamento indisponível"); return; }
 
     await Sharing.shareAsync(uriToShare, {
       mimeType: "application/pdf",
@@ -665,7 +979,7 @@ async function processFile() {
     if (type === "watermark") {
       return (
         <View style={styles.extraBox}>
-          <Text style={styles.extraLabel}>Texto da marca d’água</Text>
+          <Text style={styles.extraLabel}>Texto da marca d'água</Text>
           <TextInput
             value={watermarkText}
             onChangeText={setWatermarkText}
@@ -680,18 +994,92 @@ async function processFile() {
     return null;
   }
 
+  // 🔥 COLOCA ISSO AQUI
+if (showSignaturePad) {
+  return (
+    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      <View style={{ padding: 16, paddingTop: 50 }}>
+        <Text style={{ fontSize: 20, fontWeight: "700", textAlign: "center" }}>
+          Assinar PDF
+        </Text>
+        <Text style={{ marginTop: 8, color: "#6B7280", textAlign: "center" }}>
+          Desenhe sua assinatura e toque em Salvar
+        </Text>
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <SignatureScreen
+          onOK={handleSignatureOK}
+          onEmpty={() =>
+            Alert.alert("Assinatura vazia", "Desenhe sua assinatura antes de salvar.")
+          }
+          descriptionText="Assine no espaço abaixo"
+          clearText="Limpar"
+          confirmText="Salvar"
+          webStyle={`
+            .m-signature-pad {
+              box-shadow: none;
+              border: none;
+              height: 100%;
+            }
+
+            .m-signature-pad--body {
+              border: 2px dashed #D1D5DB;
+              margin: 0 16px;
+              height: calc(100% - 80px);
+            }
+
+            .m-signature-pad--footer {
+              display: flex;
+              flex-direction: row;
+              justify-content: space-between;
+              align-items: center;
+              padding: 12px 16px;
+              height: 72px;
+            }
+
+            .button {
+              background-color: #007AFF;
+              color: #ffffff;
+              border-radius: 12px;
+              padding: 12px 24px;
+              font-size: 16px;
+              font-weight: 700;
+            }
+
+            .button.clear {
+              background-color: #E5E7EB;
+              color: #111827;
+            }
+
+            .description {
+              color: #6B7280;
+              font-size: 14px;
+            }
+          `}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={{ padding: 16, marginBottom: 16 }}
+        onPress={() => setShowSignaturePad(false)}
+      >
+        <Text style={{ textAlign: "center", color: "#EF4444", fontWeight: "700" }}>
+          Cancelar
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.privacy}>
         <Lock size={16} color="#34C759" />
-        <Text style={styles.privacyText}>
-          Processamento local sempre que possível
-        </Text>
+        <Text style={styles.privacyText}>Processamento local sempre que possível</Text>
       </View>
 
       <View style={styles.card}>
         <View style={styles.iconBox}>{icon}</View>
-
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
 
@@ -728,9 +1116,7 @@ async function processFile() {
 
             {(type === "image-to-pdf" || type === "ocr") && (
               <TouchableOpacity style={styles.secondaryPickBtn} onPress={pickFile}>
-                <Text style={styles.secondaryPickText}>
-                  Escolher dos Arquivos
-                </Text>
+                <Text style={styles.secondaryPickText}>Escolher dos Arquivos</Text>
               </TouchableOpacity>
             )}
 
@@ -750,7 +1136,6 @@ async function processFile() {
       {type === "compress" && (
         <>
           <Text style={styles.section}>Preset</Text>
-
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {presets.map((p) => (
               <TouchableOpacity
@@ -758,12 +1143,7 @@ async function processFile() {
                 onPress={() => setSelectedPreset(p)}
                 style={[styles.chip, selectedPreset === p && styles.chipActive]}
               >
-                <Text
-                  style={[
-                    styles.chipText,
-                    selectedPreset === p && styles.chipTextActive,
-                  ]}
-                >
+                <Text style={[styles.chipText, selectedPreset === p && styles.chipTextActive]}>
                   {p}
                 </Text>
               </TouchableOpacity>
@@ -785,38 +1165,22 @@ async function processFile() {
         <View style={styles.steps}>
           <Text style={styles.stepsTitle}>Usar IA</Text>
 
-          <TouchableOpacity
-            style={styles.aiBtn}
-            onPress={() => askAI("summary")}
-            disabled={aiLoading}
-          >
+          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("summary")} disabled={aiLoading}>
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Resumir texto</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.aiBtn}
-            onPress={() => askAI("explain")}
-            disabled={aiLoading}
-          >
+          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("explain")} disabled={aiLoading}>
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Explicar conteúdo</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.aiBtn}
-            onPress={() => askAI("important")}
-            disabled={aiLoading}
-          >
+          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("important")} disabled={aiLoading}>
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Extrair dados importantes</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.aiBtn}
-            onPress={() => askAI("questions")}
-            disabled={aiLoading}
-          >
+          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("questions")} disabled={aiLoading}>
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Gerar perguntas</Text>
           </TouchableOpacity>
@@ -836,8 +1200,7 @@ async function processFile() {
         <View style={styles.premiumBox}>
           <Text style={styles.premiumTitle}>Batch ilimitado</Text>
           <Text style={styles.premiumText}>
-            Libere processamento em lote, ferramentas avançadas e uso sem limite
-            diário.
+            Libere processamento em lote, ferramentas avançadas e uso sem limite diário.
           </Text>
         </View>
       )}
@@ -845,11 +1208,7 @@ async function processFile() {
       {type !== "premium" && (
         <View style={styles.steps}>
           <Text style={styles.stepsTitle}>3 passos</Text>
-
-          <Step
-            label="Selecionar arquivo"
-            done={!!fileName || selectedFiles.length > 0}
-          />
+          <Step label="Selecionar arquivo" done={!!fileName || selectedFiles.length > 0} />
           <Step label={type === "ocr" ? "Extrair texto" : "Processar"} done={processed} />
           <Step label={type === "ocr" ? "Usar IA" : "Compartilhar"} done={!!aiResult || processed} />
         </View>
@@ -866,17 +1225,13 @@ async function processFile() {
           <>
             <Zap size={18} color="#FFF" />
             <Text style={styles.mainText}>
-              {type === "premium"
-                ? "Ver planos"
-                : type === "ocr"
-                ? "Extrair texto"
-                : "Processar"}
+              {type === "premium" ? "Ver planos" : type === "ocr" ? "Extrair texto" : "Processar"}
             </Text>
           </>
         )}
       </TouchableOpacity>
 
-      {(processed || outputUri || fileUri) && type !== "premium" && type !== "ocr" && (
+      {(processed || outputUri || fileUri) && type !== "premium" && type !== "ocr" && type !== "preview" && (
         <TouchableOpacity style={styles.secondary} onPress={shareFile}>
           <Share2 size={18} color="#111827" />
           <Text style={styles.secondaryText}>Compartilhar arquivo</Text>

@@ -18,7 +18,6 @@ import {
   Crown,
   ShieldCheck,
   Clock,
-  Sparkles,
   RotateCw,
   ListOrdered,
   Trash2,
@@ -35,28 +34,19 @@ import { getHistory, HistoryItem } from "../../utils/history";
 const FREE_LIMITS_KEY = "PDF_FREE_LIMITS";
 
 type FreeLimits = {
-  compress: {
-    date: string;
-    used: number;
-    limit: number;
-  };
+  compress: { date: string; used: number; limit: number };
+  ocr: { date: string; used: number; limit: number };
 };
 
 export default function HomeScreen() {
   const [recentFiles, setRecentFiles] = useState<HistoryItem[]>([]);
   const [limits, setLimits] = useState<FreeLimits>({
-    compress: {
-      date: new Date().toDateString(),
-      used: 0,
-      limit: 3,
-    },
+    compress: { date: new Date().toDateString(), used: 0, limit: 3 },
+    ocr: { date: new Date().toDateString(), used: 0, limit: 2 },
   });
 
   function openAction(type: string) {
-    router.push({
-      pathname: "/action",
-      params: { type },
-    });
+    router.push({ pathname: "/action", params: { type } });
   }
 
   async function loadHomeData() {
@@ -69,13 +59,13 @@ export default function HomeScreen() {
       const parsed: FreeLimits = JSON.parse(savedLimits);
       const today = new Date().toDateString();
 
-      if (parsed.compress.date !== today) {
-        const resetLimits = {
-          compress: {
-            date: today,
-            used: 0,
-            limit: 3,
-          },
+      const needsReset =
+        parsed.compress?.date !== today || parsed.ocr?.date !== today;
+
+      if (needsReset) {
+        const resetLimits: FreeLimits = {
+          compress: { date: today, used: parsed.compress?.date === today ? parsed.compress.used : 0, limit: 3 },
+          ocr: { date: today, used: parsed.ocr?.date === today ? parsed.ocr.used : 0, limit: 2 },
         };
 
         setLimits(resetLimits);
@@ -92,9 +82,15 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const compressRemaining = useMemo(() => {
-    return Math.max(0, limits.compress.limit - limits.compress.used);
-  }, [limits]);
+  const compressRemaining = useMemo(
+    () => Math.max(0, limits.compress.limit - limits.compress.used),
+    [limits]
+  );
+
+  const ocrRemaining = useMemo(
+    () => Math.max(0, limits.ocr.limit - limits.ocr.used),
+    [limits]
+  );
 
   function openPrivacyInfo() {
     Alert.alert(
@@ -103,28 +99,10 @@ export default function HomeScreen() {
     );
   }
 
-  function openBatchMode() {
-    router.push({
-      pathname: "/action",
-      params: { type: "batch" },
-    });
-  }
-
-  function openSmartPicker() {
-    router.push({
-      pathname: "/action",
-      params: { type: "smart-picker" },
-    });
-  }
-
   function openRecentFile(item: HistoryItem) {
     router.push({
       pathname: "/action",
-      params: {
-        type: "preview",
-        uri: item.uri,
-        name: item.name,
-      },
+      params: { type: "preview", uri: item.uri, name: item.name },
     });
   }
 
@@ -149,7 +127,6 @@ export default function HomeScreen() {
         </View>
 
         <Text style={styles.heroTitle}>Seus arquivos nunca saem do celular.</Text>
-
         <Text style={styles.heroText}>
           Comprima, converta e organize PDFs com privacidade total.
         </Text>
@@ -173,10 +150,7 @@ export default function HomeScreen() {
               <Text style={styles.continueTitle} numberOfLines={1}>
                 {recentFiles[0].name}
               </Text>
-
-              <Text style={styles.continueSubtitle}>
-                Último arquivo usado
-              </Text>
+              <Text style={styles.continueSubtitle}>Último arquivo usado</Text>
             </View>
 
             <ChevronRight size={20} color="#9CA3AF" />
@@ -184,64 +158,23 @@ export default function HomeScreen() {
         </>
       )}
 
-      {/* AÇÃO INTELIGENTE */}
-      <Text style={styles.sectionTitle}>Ação inteligente</Text>
-
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={styles.smartCard}
-        onPress={openSmartPicker}
-      >
-        <View style={styles.smartIcon}>
-          <Sparkles size={24} color="#7C3AED" />
-        </View>
-
-        <View style={styles.cardContent}>
-          <Text style={styles.smartTitle}>Selecionar arquivo e sugerir ação</Text>
-          <Text style={styles.cardSubtitle}>
-            O app identifica se é melhor comprimir, juntar, dividir ou converter.
-          </Text>
-        </View>
-      </TouchableOpacity>
-
       {/* GUIADO POR OBJETIVO */}
       <Text style={styles.sectionTitle}>O que você quer fazer?</Text>
 
       <View style={styles.goalGrid}>
-        <GoalButton
-          title="Reduzir tamanho"
-          onPress={() => openAction("compress")}
-        />
-
-        <GoalButton
-          title="Juntar arquivos"
-          onPress={() => openAction("merge")}
-        />
-
-        <GoalButton
-          title="Converter imagens"
-          onPress={() => openAction("image-to-pdf")}
-        />
-
-        <GoalButton
-          title="Separar páginas"
-          onPress={() => openAction("split")}
-        />
+        <GoalButton title="Reduzir tamanho" onPress={() => openAction("compress")} />
+        <GoalButton title="Juntar arquivos" onPress={() => openAction("merge")} />
+        <GoalButton title="Converter imagens" onPress={() => openAction("image-to-pdf")} />
+        <GoalButton title="Separar páginas" onPress={() => openAction("split")} />
       </View>
 
       {/* FERRAMENTAS */}
-      <View style={styles.sectionRow}>
-        <Text style={styles.sectionTitleNoMargin}>Ferramentas</Text>
-
-        <TouchableOpacity onPress={openBatchMode}>
-          <Text style={styles.batchLink}>Selecionar vários</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={styles.sectionTitle}>Ferramentas</Text>
 
       <View style={styles.toolsGrid}>
         <ActionCard
           title="Comprimir PDF"
-          subtitle={`${compressRemaining} de 3 grátis restantes hoje`}
+          subtitle={`${compressRemaining} de 3 grátis hoje`}
           badge="Grátis"
           icon={<FileDown size={22} color="#007AFF" />}
           onPress={() => openAction("compress")}
@@ -280,13 +213,12 @@ export default function HomeScreen() {
           subtitle="Vários arquivos."
           badge="Novo"
           icon={<Files size={22} color="#007AFF" />}
-          onPress={openBatchMode}
+          onPress={() => openAction("batch")}
         />
       </View>
 
       {/* MAIS FERRAMENTAS */}
       <Text style={styles.sectionTitle}>Mais ferramentas</Text>
-      
 
       <View style={styles.toolsGrid}>
         <ActionCard
@@ -332,7 +264,7 @@ export default function HomeScreen() {
         />
 
         <ActionCard
-          title="Marca d’água"
+          title="Marca d'água"
           subtitle="Texto ou imagem."
           icon={<Droplets size={22} color="#007AFF" />}
           onPress={() => openAction("watermark")}
@@ -340,7 +272,7 @@ export default function HomeScreen() {
 
         <ActionCard
           title="OCR"
-          subtitle="PDF escaneado em texto."
+          subtitle={`${ocrRemaining} de 2 grátis hoje`}
           badge="IA"
           icon={<ScanText size={22} color="#007AFF" />}
           onPress={() => openAction("ocr")}
@@ -368,7 +300,6 @@ export default function HomeScreen() {
                   <Text style={styles.recentName} numberOfLines={1}>
                     {item.name}
                   </Text>
-
                   <Text style={styles.recentDate}>
                     {new Date(item.date).toLocaleDateString()}
                   </Text>
@@ -385,8 +316,8 @@ export default function HomeScreen() {
       <Text style={styles.sectionTitle}>Premium</Text>
 
       <ActionCard
-        title="Batch ilimitado"
-        subtitle="Processe vários arquivos sem limites."
+        title="Desbloquear tudo"
+        subtitle="Sem limites diários, batch e sem anúncios."
         badge="Premium"
         premium
         icon={<Crown size={24} color="#B45309" />}
@@ -408,14 +339,7 @@ function GoalButton({ title, onPress }: any) {
   );
 }
 
-function ActionCard({
-  title,
-  subtitle,
-  icon,
-  badge,
-  premium,
-  onPress,
-}: any) {
+function ActionCard({ title, subtitle, icon, badge, premium, onPress }: any) {
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -432,9 +356,7 @@ function ActionCard({
 
           {badge && (
             <View style={[styles.badge, premium && styles.premiumBadge]}>
-              <Text
-                style={[styles.badgeText, premium && styles.premiumBadgeText]}
-              >
+              <Text style={[styles.badgeText, premium && styles.premiumBadgeText]}>
                 {badge}
               </Text>
             </View>
@@ -455,7 +377,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F7F8",
     paddingHorizontal: 18,
   },
-
   hero: {
     backgroundColor: "#FFFFFF",
     borderRadius: 30,
@@ -463,13 +384,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 24,
   },
-
   heroTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-
   heroIcon: {
     width: 60,
     height: 60,
@@ -479,32 +398,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 16,
   },
-
   privacyBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: "#F3F4F6",
     borderRadius: 999,
   },
-
   privacyText: {
     fontSize: 12,
     fontWeight: "800",
     color: "#007AFF",
   },
-
   heroTitle: {
     fontSize: 26,
     fontWeight: "800",
     color: "#111827",
   },
-
   heroText: {
     marginTop: 8,
     fontSize: 15,
     color: "#6B7280",
   },
-
   sectionTitle: {
     fontSize: 14,
     fontWeight: "700",
@@ -512,27 +426,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 4,
   },
-
-  sectionTitleNoMargin: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#6B7280",
-    marginLeft: 4,
-  },
-
-  sectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-
-  batchLink: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#007AFF",
-  },
-
   continueCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
@@ -541,7 +434,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-
   continueIcon: {
     width: 44,
     height: 44,
@@ -551,55 +443,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 12,
   },
-
-  continueContent: {
-    flex: 1,
-  },
-
+  continueContent: { flex: 1 },
   continueTitle: {
     fontSize: 15,
     fontWeight: "800",
     color: "#111827",
   },
-
   continueSubtitle: {
     marginTop: 3,
     fontSize: 12,
     color: "#6B7280",
   },
-
-  smartCard: {
-    backgroundColor: "#F3E8FF",
-    borderRadius: 24,
-    padding: 15,
-    marginBottom: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  smartIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    backgroundColor: "#E9D5FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  smartTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#4C1D95",
-  },
-
   goalGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     marginBottom: 20,
   },
-
   goalButton: {
     width: "48%",
     backgroundColor: "#FFFFFF",
@@ -608,39 +468,33 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginBottom: 10,
   },
-
   goalText: {
     fontSize: 13,
     fontWeight: "800",
     color: "#111827",
   },
-
   toolsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     marginBottom: 18,
   },
-
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
     padding: 13,
     marginBottom: 10,
   },
-
   gridCard: {
     width: "48%",
     minHeight: 112,
   },
-
   premiumCard: {
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-
   iconBox: {
     width: 38,
     height: 38,
@@ -650,7 +504,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 10,
   },
-
   premiumIconBox: {
     width: 46,
     height: 46,
@@ -658,65 +511,48 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF4D6",
     marginBottom: 0,
   },
-
-  cardContent: {
-    flex: 1,
-  },
-
+  cardContent: { flex: 1 },
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     flexWrap: "wrap",
   },
-
   cardTitle: {
     fontSize: 14,
     fontWeight: "800",
     color: "#111827",
   },
-
   cardSubtitle: {
     marginTop: 3,
     fontSize: 12,
     color: "#6B7280",
   },
-
   badge: {
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
     backgroundColor: "#EEF2FF",
   },
-
   badgeText: {
     fontSize: 10,
     fontWeight: "800",
     color: "#007AFF",
   },
-
-  premiumBadge: {
-    backgroundColor: "#FFF4D6",
-  },
-
-  premiumBadgeText: {
-    color: "#B45309",
-  },
-
+  premiumBadge: { backgroundColor: "#FFF4D6" },
+  premiumBadgeText: { color: "#B45309" },
   recentBox: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
     padding: 6,
     marginBottom: 20,
   },
-
   recentItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
     borderRadius: 16,
   },
-
   recentIcon: {
     width: 36,
     height: 36,
@@ -726,17 +562,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 10,
   },
-
-  recentInfo: {
-    flex: 1,
-  },
-
+  recentInfo: { flex: 1 },
   recentName: {
     fontSize: 13,
     fontWeight: "800",
     color: "#111827",
   },
-
   recentDate: {
     marginTop: 2,
     fontSize: 11,
