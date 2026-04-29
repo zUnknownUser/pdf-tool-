@@ -11,7 +11,7 @@ import { PDFDocument, degrees, rgb } from "pdf-lib";
 
 
 dotenv.config();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const BASE_URL =
   process.env.BASE_URL ||
   (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -530,7 +530,11 @@ app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
   }
 });
 
+app.get("/", (req, res) => {
+  res.send("API OK");
+});
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+  ;
 });

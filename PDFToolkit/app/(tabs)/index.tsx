@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { useEffect } from "react";
 import {
   ScrollView,
   View,
@@ -44,6 +45,19 @@ export default function HomeScreen() {
     compress: { date: new Date().toDateString(), used: 0, limit: 3 },
     ocr: { date: new Date().toDateString(), used: 0, limit: 2 },
   });
+
+    
+  useEffect(() => {
+    async function checkOnboarding() {
+      const seen = await AsyncStorage.getItem("PDF_ONBOARDING_SEEN");
+
+      if (!seen) {
+        router.replace("/onboarding" as any);
+      }
+    }
+
+    checkOnboarding();
+  }, []);
 
   function openAction(type: string) {
     router.push({ pathname: "/action", params: { type } });

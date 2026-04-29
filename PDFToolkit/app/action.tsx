@@ -614,32 +614,7 @@ async function loadSavedSignature() {
 async function processFile() {
   const hasGalleryImages = selectedImages.length > 0;
   const hasSelectedFile = !!fileUri || selectedFiles.length > 0;
-  const saved = await AsyncStorage.getItem(SAVED_SIGNATURE_KEY);
 
-  if (saved && !signatureUri) {
-  Alert.alert(
-    "Assinatura salva encontrada",
-    "Deseja usar sua assinatura salva?",
-    [
-      {
-        text: "Usar",
-        onPress: () => {
-          setSignatureUri(saved);
-          processFile(); // continua fluxo
-        },
-      },
-      {
-        text: "Nova assinatura",
-        onPress: () => {
-          setShowSignaturePad(true);
-        },
-      },
-    ]
-  );
-
-  setLoading(false);
-  return;
-}
 
   
   if (type === "premium") {
