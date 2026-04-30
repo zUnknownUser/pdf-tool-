@@ -17,9 +17,10 @@ process.on("unhandledRejection", (reason) => {
   console.error("[unhandledRejection]", reason);
 });
 
-
 dotenv.config();
+
 const PORT = Number(process.env.PORT) || 3000;
+
 const BASE_URL =
   process.env.BASE_URL ||
   (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -28,21 +29,30 @@ const BASE_URL =
 
 const app = express();
 
+const uploadDir = path.join(process.cwd(), "uploads");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(cors());
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({ limit: "80mb" }));
+
+app.use("/files", express.static(uploadDir));
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
-
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: uploadDir,
   filename: (req, file, cb) => {
-    const safeName = decodeURIComponent(file.originalname)
+    const safeName = decodeURIComponent(file.originalname || "arquivo.pdf")
       .replace(/[^\w.-]/g, "_");
 
     cb(null, `${Date.now()}-${safeName}`);
@@ -52,11 +62,9 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 20 * 1024 * 1024, // 20MB
+    fileSize: 80 * 1024 * 1024,
   },
 });
-
-app.use("/files", express.static("uploads"));
 
 const prompts: Record<string, string> = {
   summary: "Resuma este texto de forma clara, curta e objetiva.",
@@ -65,11 +73,34 @@ const prompts: Record<string, string> = {
   questions: "Crie perguntas e respostas com base neste texto.",
 };
 
+function withTimeout<T>(promise: Promise<T>, ms = 60000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout no processamento")), ms)
+    ),
+  ]);
+}
+
+function cleanupFile(filePath?: string) {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (err) {
+    console.warn("[cleanupFile] Falha ao apagar arquivo:", err);
+  }
+}
+
 function getILovePDFInstance() {
-  return new ILovePDFApi(
-    process.env.ILOVEPDF_PUBLIC_KEY!,
-    process.env.ILOVEPDF_SECRET_KEY!
-  );
+  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY;
+  const secretKey = process.env.ILOVEPDF_SECRET_KEY;
+
+  if (!publicKey || !secretKey) {
+    throw new Error("Chaves ILOVEPDF_PUBLIC_KEY ou ILOVEPDF_SECRET_KEY não configuradas.");
+  }
+
+  return new ILovePDFApi(publicKey, secretKey);
 }
 
 async function processSimpleILovePDFTask(
@@ -78,22 +109,26 @@ async function processSimpleILovePDFTask(
   options: any = {}
 ) {
   const instance = getILovePDFInstance();
-
   const task = instance.newTask(taskName);
-  await task.start();
+
+  console.log(`[ilovepdf] Iniciando task simples: ${taskName}`);
+  await withTimeout(task.start());
+  console.log("[ilovepdf] Task simples iniciada");
 
   for (const filePath of filePaths) {
     const file = new ILovePDFFile(filePath);
-    await task.addFile(file);
+    await withTimeout(task.addFile(file));
+    console.log("[ilovepdf] Arquivo adicionado:", filePath);
   }
 
-  await task.process(options);
+  await withTimeout(task.process(options));
+  console.log("[ilovepdf] Task simples processada");
 
-  const data = await task.download();
+  const data = await withTimeout(task.download());
+  console.log("[ilovepdf] Download simples ok");
 
   return Buffer.from(data);
 }
-
 
 async function processPDFWithILovePDF(
   taskName: "protect" | "unlock",
@@ -101,98 +136,31 @@ async function processPDFWithILovePDF(
   password: string
 ) {
   const instance = getILovePDFInstance();
-
   const task = instance.newTask(taskName);
 
   console.log(`[ilovepdf] Iniciando task: ${taskName}`);
-  await task.start();
-  console.log(`[ilovepdf] Task iniciada`);
+  await withTimeout(task.start());
+  console.log("[ilovepdf] Task iniciada");
 
   const file = new ILovePDFFile(filePath);
-  await task.addFile(file);
-  console.log(`[ilovepdf] Arquivo adicionado`);
+  await withTimeout(task.addFile(file));
+  console.log("[ilovepdf] Arquivo adicionado");
 
-  await task.process({ password });
-  console.log(`[ilovepdf] Processado`);
+  await withTimeout(task.process({ password }));
+  console.log("[ilovepdf] Processado");
 
-  const data = await task.download();
-  console.log(`[ilovepdf] Download ok`);
+  const data = await withTimeout(task.download());
+  console.log("[ilovepdf] Download ok");
 
   return Buffer.from(data);
 }
 
-app.post("/pdf/protect-base64", express.json({ limit: "30mb" }), async (req, res) => {
-  try {
-    const { pdfBase64, password } = req.body;
-    if (!pdfBase64 || !password) return res.status(400).json({ error: "Dados incompletos." });
-
-    const inputName = `input-${Date.now()}.pdf`;
-    const inputPath = path.join("uploads", inputName);
-    fs.writeFileSync(inputPath, Buffer.from(pdfBase64, "base64"));
-
-    const buffer = await processPDFWithILovePDF("protect", inputPath, password);
-    fs.unlinkSync(inputPath);
-
-    const outputName = `protected-${Date.now()}.pdf`;
-    fs.writeFileSync(path.join("uploads", outputName), buffer);
-
-    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
-  } catch (err) {
-    console.error("Erro protect-base64:", err);
-    return res.status(500).json({ error: "Erro ao proteger PDF." });
-  }
+app.get("/", (req, res) => {
+  res.send("API OK");
 });
 
-app.post("/pdf/unlock-base64", express.json({ limit: "30mb" }), async (req, res) => {
-  try {
-    const { pdfBase64, password } = req.body;
-    if (!pdfBase64 || !password) return res.status(400).json({ error: "Dados incompletos." });
-
-    const inputName = `input-${Date.now()}.pdf`;
-    const inputPath = path.join("uploads", inputName);
-    fs.writeFileSync(inputPath, Buffer.from(pdfBase64, "base64"));
-
-    const buffer = await processPDFWithILovePDF("unlock", inputPath, password);
-    fs.unlinkSync(inputPath);
-
-    const outputName = `unlocked-${Date.now()}.pdf`;
-    fs.writeFileSync(path.join("uploads", outputName), buffer);
-
-    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
-  } catch (err) {
-    console.error("Erro unlock-base64:", err);
-    return res.status(500).json({ error: "Erro ao desbloquear PDF." });
-  }
-});
-
-app.post("/pdf/watermark-base64", express.json({ limit: "30mb" }), async (req, res) => {
-  try {
-    const { pdfBase64, text } = req.body;
-    if (!pdfBase64 || !text) return res.status(400).json({ error: "Dados incompletos." });
-
-    const pdfBytes = Buffer.from(pdfBase64, "base64");
-    const pdfDoc = await PDFDocument.load(pdfBytes);
-
-    pdfDoc.getPages().forEach((page) => {
-      const { width, height } = page.getSize();
-      page.drawText(String(text).trim(), {
-        x: width / 4,
-        y: height / 2,
-        size: 40,
-        opacity: 0.2,
-        rotate: degrees(-30),
-        color: rgb(0.3, 0.3, 0.3),
-      });
-    });
-
-    const outputName = `watermark-${Date.now()}.pdf`;
-    fs.writeFileSync(path.join("uploads", outputName), await pdfDoc.save());
-
-    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
-  } catch (err) {
-    console.error("Erro watermark-base64:", err);
-    return res.status(500).json({ error: "Erro ao aplicar marca d'água." });
-  }
+app.get("/health", (req, res) => {
+  res.json({ ok: true, message: "API saudável" });
 });
 
 app.post("/ai/pdf-tools", async (req, res) => {
@@ -216,9 +184,12 @@ ${text}
     });
 
     return res.json({ result: response.text });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro Gemini:", error);
-    return res.status(500).json({ error: "Erro ao processar IA com Gemini." });
+    return res.status(500).json({
+      error: "Erro ao processar IA com Gemini.",
+      detail: error?.message ?? String(error),
+    });
   }
 });
 
@@ -229,6 +200,7 @@ app.post("/pdf/protect", upload.single("file"), async (req, res) => {
     const password = req.body.password;
 
     if (!password) {
+      cleanupFile(req.file?.path);
       return res.status(400).json({ error: "Senha não enviada." });
     }
 
@@ -242,22 +214,18 @@ app.post("/pdf/protect", upload.single("file"), async (req, res) => {
     console.log("Path:", req.file.path);
 
     if (req.file.mimetype !== "application/pdf") {
-      fs.unlinkSync(req.file.path);
+      cleanupFile(req.file.path);
       return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
     }
 
     const outputName = `protected-${Date.now()}.pdf`;
-    const outputPath = path.join("uploads", outputName);
+    const outputPath = path.join(uploadDir, outputName);
 
     console.log("Protegendo PDF...");
-    const buffer = await processPDFWithILovePDF(
-      "protect",
-      req.file.path,
-      password
-    );
+    const buffer = await processPDFWithILovePDF("protect", req.file.path, password);
 
     fs.writeFileSync(outputPath, buffer);
-    fs.unlinkSync(req.file.path);
+    cleanupFile(req.file.path);
 
     console.log("PDF protegido com sucesso:", outputName);
 
@@ -265,19 +233,134 @@ app.post("/pdf/protect", upload.single("file"), async (req, res) => {
       fileUrl: `${BASE_URL}/files/${outputName}`,
     });
   } catch (error: any) {
-    console.error("Erro ao proteger PDF:");
+    console.error("Erro ao proteger PDF:", error?.message ?? error);
 
     if (error?.response?.data) {
       console.error(JSON.stringify(error.response.data, null, 2));
-    } else {
-      console.error(error);
     }
 
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    cleanupFile(req.file?.path);
+
+    return res.status(500).json({
+      error: "Erro ao proteger PDF.",
+      detail: error?.message ?? String(error),
+    });
+  }
+});
+
+app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
+  try {
+    console.log("======= NOVA REQUISIÇÃO /pdf/unlock =======");
+
+    const password = req.body.password;
+
+    if (!password) {
+      cleanupFile(req.file?.path);
+      return res.status(400).json({ error: "Senha do PDF não enviada." });
     }
 
-    return res.status(500).json({ error: "Erro ao proteger PDF." });
+    if (!req.file) {
+      return res.status(400).json({ error: "Arquivo não enviado." });
+    }
+
+    console.log("Arquivo:", req.file.originalname);
+    console.log("Mimetype:", req.file.mimetype);
+    console.log("Tamanho MB:", (req.file.size / 1024 / 1024).toFixed(2));
+    console.log("Path:", req.file.path);
+
+    if (req.file.mimetype !== "application/pdf") {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+    }
+
+    const outputName = `unlocked-${Date.now()}.pdf`;
+    const outputPath = path.join(uploadDir, outputName);
+
+    console.log("Desbloqueando PDF...");
+    const buffer = await processPDFWithILovePDF("unlock", req.file.path, password);
+
+    fs.writeFileSync(outputPath, buffer);
+    cleanupFile(req.file.path);
+
+    console.log("PDF desbloqueado com sucesso:", outputName);
+
+    return res.json({
+      fileUrl: `${BASE_URL}/files/${outputName}`,
+    });
+  } catch (error: any) {
+    console.error("Erro ao desbloquear PDF:", error?.message ?? error);
+
+    if (error?.response?.data) {
+      console.error(JSON.stringify(error.response.data, null, 2));
+    }
+
+    cleanupFile(req.file?.path);
+
+    return res.status(500).json({
+      error: "Erro ao desbloquear PDF.",
+      detail: error?.message ?? String(error),
+    });
+  }
+});
+
+app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
+  try {
+    console.log("======= NOVA REQUISIÇÃO /pdf/watermark =======");
+
+    const { text } = req.body;
+
+    if (!text || !String(text).trim()) {
+      cleanupFile(req.file?.path);
+      return res.status(400).json({ error: "Texto da marca não enviado." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: "Arquivo não enviado." });
+    }
+
+    console.log("Arquivo:", req.file.originalname);
+    console.log("Mimetype:", req.file.mimetype);
+    console.log("Tamanho MB:", (req.file.size / 1024 / 1024).toFixed(2));
+    console.log("Path:", req.file.path);
+
+    if (req.file.mimetype !== "application/pdf") {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+    }
+
+    const pdfBytes = fs.readFileSync(req.file.path);
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+
+    pdfDoc.getPages().forEach((page) => {
+      const { width, height } = page.getSize();
+
+      page.drawText(String(text).trim(), {
+        x: width / 4,
+        y: height / 2,
+        size: 40,
+        opacity: 0.2,
+        rotate: degrees(-30),
+        color: rgb(0.3, 0.3, 0.3),
+      });
+    });
+
+    const outputName = `watermark-${Date.now()}.pdf`;
+    const outputPath = path.join(uploadDir, outputName);
+
+    fs.writeFileSync(outputPath, await pdfDoc.save());
+    cleanupFile(req.file.path);
+
+    return res.json({
+      fileUrl: `${BASE_URL}/files/${outputName}`,
+    });
+  } catch (error: any) {
+    console.error("Erro ao aplicar marca d'água:", error?.message ?? error);
+    cleanupFile(req.file?.path);
+
+    return res.status(500).json({
+      error: "Erro ao aplicar marca d'água.",
+      detail: error?.message ?? String(error),
+    });
   }
 });
 
@@ -288,6 +371,9 @@ app.post(
     { name: "signature", maxCount: 1 },
   ]),
   async (req, res) => {
+    let pdfFile: Express.Multer.File | undefined;
+    let signatureFile: Express.Multer.File | undefined;
+
     try {
       console.log("======= NOVA REQUISIÇÃO /pdf/sign =======");
 
@@ -296,20 +382,25 @@ app.post(
         signature?: Express.Multer.File[];
       };
 
-      const pdfFile = files.file?.[0];
-      const signatureFile = files.signature?.[0];
+      pdfFile = files.file?.[0];
+      signatureFile = files.signature?.[0];
 
       if (!pdfFile) {
+        cleanupFile(signatureFile?.path);
         return res.status(400).json({ error: "PDF não enviado." });
       }
 
       if (!signatureFile) {
+        cleanupFile(pdfFile.path);
         return res.status(400).json({ error: "Assinatura não enviada." });
       }
 
+      console.log("PDF:", pdfFile.originalname, pdfFile.mimetype, pdfFile.size);
+      console.log("Assinatura:", signatureFile.originalname, signatureFile.mimetype, signatureFile.size);
+
       if (pdfFile.mimetype !== "application/pdf") {
-        fs.unlinkSync(pdfFile.path);
-        fs.unlinkSync(signatureFile.path);
+        cleanupFile(pdfFile.path);
+        cleanupFile(signatureFile.path);
         return res.status(400).json({ error: "O arquivo enviado não é PDF." });
       }
 
@@ -338,8 +429,8 @@ app.post(
       ) {
         signatureImage = await pdfDoc.embedJpg(signatureBytes);
       } else {
-        fs.unlinkSync(pdfFile.path);
-        fs.unlinkSync(signatureFile.path);
+        cleanupFile(pdfFile.path);
+        cleanupFile(signatureFile.path);
         return res.status(400).json({
           error: "A assinatura precisa ser PNG ou JPG.",
         });
@@ -355,21 +446,25 @@ app.post(
       const signedPdfBytes = await pdfDoc.save();
 
       const outputName = `signed-${Date.now()}.pdf`;
-      const outputPath = path.join("uploads", outputName);
+      const outputPath = path.join(uploadDir, outputName);
 
       fs.writeFileSync(outputPath, signedPdfBytes);
 
-      fs.unlinkSync(pdfFile.path);
-      fs.unlinkSync(signatureFile.path);
+      cleanupFile(pdfFile.path);
+      cleanupFile(signatureFile.path);
 
       return res.json({
         fileUrl: `${BASE_URL}/files/${outputName}`,
       });
-    } catch (error) {
-      console.error("Erro ao assinar PDF:", error);
+    } catch (error: any) {
+      console.error("Erro ao assinar PDF:", error?.message ?? error);
+
+      cleanupFile(pdfFile?.path);
+      cleanupFile(signatureFile?.path);
 
       return res.status(500).json({
         error: "Erro ao assinar PDF.",
+        detail: error?.message ?? String(error),
       });
     }
   }
@@ -377,12 +472,14 @@ app.post(
 
 app.post("/pdf/compress", upload.single("file"), async (req, res) => {
   try {
+    console.log("======= NOVA REQUISIÇÃO /pdf/compress =======");
+
     if (!req.file) {
       return res.status(400).json({ error: "Arquivo não enviado." });
     }
 
     if (req.file.mimetype !== "application/pdf") {
-      fs.unlinkSync(req.file.path);
+      cleanupFile(req.file.path);
       return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
     }
 
@@ -391,28 +488,30 @@ app.post("/pdf/compress", upload.single("file"), async (req, res) => {
     });
 
     const outputName = `compressed-${Date.now()}.pdf`;
-    const outputPath = path.join("uploads", outputName);
+    const outputPath = path.join(uploadDir, outputName);
 
     fs.writeFileSync(outputPath, buffer);
-    fs.unlinkSync(req.file.path);
+    cleanupFile(req.file.path);
 
     return res.json({
       fileUrl: `${BASE_URL}/files/${outputName}`,
     });
-  } catch (error) {
-    console.error("Erro ao comprimir PDF:", error);
+  } catch (error: any) {
+    console.error("Erro ao comprimir PDF:", error?.message ?? error);
+    cleanupFile(req.file?.path);
 
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-
-    return res.status(500).json({ error: "Erro ao comprimir PDF." });
+    return res.status(500).json({
+      error: "Erro ao comprimir PDF.",
+      detail: error?.message ?? String(error),
+    });
   }
 });
 
 app.post("/pdf/merge", upload.array("files", 10), async (req, res) => {
+  const files = req.files as Express.Multer.File[] | undefined;
+
   try {
-    const files = req.files as Express.Multer.File[];
+    console.log("======= NOVA REQUISIÇÃO /pdf/merge =======");
 
     if (!files || files.length < 2) {
       return res.status(400).json({ error: "Envie pelo menos 2 PDFs." });
@@ -420,45 +519,38 @@ app.post("/pdf/merge", upload.array("files", 10), async (req, res) => {
 
     for (const file of files) {
       if (file.mimetype !== "application/pdf") {
-        files.forEach((f) => {
-          if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-        });
-
+        files.forEach((f) => cleanupFile(f.path));
         return res.status(400).json({ error: "Todos os arquivos precisam ser PDF." });
       }
     }
 
     const filePaths = files.map((file) => file.path);
-
     const buffer = await processSimpleILovePDFTask("merge", filePaths);
 
     const outputName = `merged-${Date.now()}.pdf`;
-    const outputPath = path.join("uploads", outputName);
+    const outputPath = path.join(uploadDir, outputName);
 
     fs.writeFileSync(outputPath, buffer);
-
-    files.forEach((file) => {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    });
+    files.forEach((file) => cleanupFile(file.path));
 
     return res.json({
       fileUrl: `${BASE_URL}/files/${outputName}`,
     });
-  } catch (error) {
-    console.error("Erro ao juntar PDFs:", error);
+  } catch (error: any) {
+    console.error("Erro ao juntar PDFs:", error?.message ?? error);
+    files?.forEach((file) => cleanupFile(file.path));
 
-    const files = req.files as Express.Multer.File[] | undefined;
-
-    files?.forEach((file) => {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    return res.status(500).json({
+      error: "Erro ao juntar PDFs.",
+      detail: error?.message ?? String(error),
     });
-
-    return res.status(500).json({ error: "Erro ao juntar PDFs." });
   }
 });
 
 app.post("/pdf/split", upload.single("file"), async (req, res) => {
   try {
+    console.log("======= NOVA REQUISIÇÃO /pdf/split =======");
+
     const ranges = req.body.ranges;
 
     if (!req.file) {
@@ -466,12 +558,12 @@ app.post("/pdf/split", upload.single("file"), async (req, res) => {
     }
 
     if (!ranges) {
-      fs.unlinkSync(req.file.path);
+      cleanupFile(req.file.path);
       return res.status(400).json({ error: "Intervalo de páginas não enviado." });
     }
 
     if (req.file.mimetype !== "application/pdf") {
-      fs.unlinkSync(req.file.path);
+      cleanupFile(req.file.path);
       return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
     }
 
@@ -480,50 +572,103 @@ app.post("/pdf/split", upload.single("file"), async (req, res) => {
     });
 
     const outputName = `split-${Date.now()}.zip`;
-    const outputPath = path.join("uploads", outputName);
+    const outputPath = path.join(uploadDir, outputName);
 
     fs.writeFileSync(outputPath, buffer);
-    fs.unlinkSync(req.file.path);
+    cleanupFile(req.file.path);
 
     return res.json({
       fileUrl: `${BASE_URL}/files/${outputName}`,
     });
-  } catch (error) {
-    console.error("Erro ao dividir PDF:", error);
+  } catch (error: any) {
+    console.error("Erro ao dividir PDF:", error?.message ?? error);
+    cleanupFile(req.file?.path);
 
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-
-    return res.status(500).json({ error: "Erro ao dividir PDF." });
+    return res.status(500).json({
+      error: "Erro ao dividir PDF.",
+      detail: error?.message ?? String(error),
+    });
   }
 });
 
-app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
+app.post("/pdf/protect-base64", express.json({ limit: "80mb" }), async (req, res) => {
+  let inputPath = "";
+
   try {
-    console.log("======= NOVA REQUISIÇÃO /pdf/watermark =======");
+    const { pdfBase64, password } = req.body;
 
-    const { text } = req.body;
-
-    if (!text || !String(text).trim()) {
-      return res.status(400).json({ error: "Texto da marca não enviado." });
+    if (!pdfBase64 || !password) {
+      return res.status(400).json({ error: "Dados incompletos." });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+    const inputName = `input-${Date.now()}.pdf`;
+    inputPath = path.join(uploadDir, inputName);
+
+    fs.writeFileSync(inputPath, Buffer.from(pdfBase64, "base64"));
+
+    const buffer = await processPDFWithILovePDF("protect", inputPath, password);
+    cleanupFile(inputPath);
+
+    const outputName = `protected-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join(uploadDir, outputName), buffer);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (error: any) {
+    console.error("Erro protect-base64:", error?.message ?? error);
+    cleanupFile(inputPath);
+
+    return res.status(500).json({
+      error: "Erro ao proteger PDF.",
+      detail: error?.message ?? String(error),
+    });
+  }
+});
+
+app.post("/pdf/unlock-base64", express.json({ limit: "80mb" }), async (req, res) => {
+  let inputPath = "";
+
+  try {
+    const { pdfBase64, password } = req.body;
+
+    if (!pdfBase64 || !password) {
+      return res.status(400).json({ error: "Dados incompletos." });
     }
 
-    if (req.file.mimetype !== "application/pdf") {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+    const inputName = `input-${Date.now()}.pdf`;
+    inputPath = path.join(uploadDir, inputName);
+
+    fs.writeFileSync(inputPath, Buffer.from(pdfBase64, "base64"));
+
+    const buffer = await processPDFWithILovePDF("unlock", inputPath, password);
+    cleanupFile(inputPath);
+
+    const outputName = `unlocked-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join(uploadDir, outputName), buffer);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (error: any) {
+    console.error("Erro unlock-base64:", error?.message ?? error);
+    cleanupFile(inputPath);
+
+    return res.status(500).json({
+      error: "Erro ao desbloquear PDF.",
+      detail: error?.message ?? String(error),
+    });
+  }
+});
+
+app.post("/pdf/watermark-base64", express.json({ limit: "80mb" }), async (req, res) => {
+  try {
+    const { pdfBase64, text } = req.body;
+
+    if (!pdfBase64 || !text) {
+      return res.status(400).json({ error: "Dados incompletos." });
     }
 
-    const pdfBytes = fs.readFileSync(req.file.path);
+    const pdfBytes = Buffer.from(pdfBase64, "base64");
     const pdfDoc = await PDFDocument.load(pdfBytes);
 
-    const pages = pdfDoc.getPages();
-
-    pages.forEach((page) => {
+    pdfDoc.getPages().forEach((page) => {
       const { width, height } = page.getSize();
 
       page.drawText(String(text).trim(), {
@@ -536,29 +681,21 @@ app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
       });
     });
 
-    const newBytes = await pdfDoc.save();
-
     const outputName = `watermark-${Date.now()}.pdf`;
-    const outputPath = path.join("uploads", outputName);
+    fs.writeFileSync(path.join(uploadDir, outputName), await pdfDoc.save());
 
-    fs.writeFileSync(outputPath, newBytes);
-    fs.unlinkSync(req.file.path);
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (error: any) {
+    console.error("Erro watermark-base64:", error?.message ?? error);
 
-    return res.json({
-      fileUrl: `${BASE_URL}/files/${outputName}`,
+    return res.status(500).json({
+      error: "Erro ao aplicar marca d'água.",
+      detail: error?.message ?? String(error),
     });
-  } catch (err) {
-    console.error("Erro ao aplicar marca d'água:", err);
-
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-
-    return res.status(500).json({ error: "Erro ao aplicar marca d'água." });
   }
 });
 
-app.post("/pdf/sign-base64", express.json({ limit: "30mb" }), async (req, res) => {
+app.post("/pdf/sign-base64", express.json({ limit: "80mb" }), async (req, res) => {
   try {
     const { pdfBase64, signatureBase64, page, x, y, width, height } = req.body;
 
@@ -584,86 +721,42 @@ app.post("/pdf/sign-base64", express.json({ limit: "30mb" }), async (req, res) =
       height: height ?? 70,
     });
 
-    const signedBytes = await pdfDoc.save();
-
     const outputName = `signed-${Date.now()}.pdf`;
-    const outputPath = path.join("uploads", outputName);
-    fs.writeFileSync(outputPath, signedBytes);
+    const outputPath = path.join(uploadDir, outputName);
+
+    fs.writeFileSync(outputPath, await pdfDoc.save());
 
     return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
-  } catch (error) {
-    console.error("Erro ao assinar PDF (base64):", error);
-    return res.status(500).json({ error: "Erro ao assinar PDF." });
-  }
-});
-
-
-app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
-  try {
-    console.log("======= NOVA REQUISIÇÃO /pdf/unlock =======");
-
-    const password = req.body.password;
-
-    if (!password) {
-      return res.status(400).json({ error: "Senha do PDF não enviada." });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
-    }
-
-    console.log("Arquivo:", req.file.originalname);
-    console.log("Mimetype:", req.file.mimetype);
-    console.log("Tamanho MB:", (req.file.size / 1024 / 1024).toFixed(2));
-    console.log("Path:", req.file.path);
-
-    if (req.file.mimetype !== "application/pdf") {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
-    }
-
-    const outputName = `unlocked-${Date.now()}.pdf`;
-    const outputPath = path.join("uploads", outputName);
-
-    console.log("Desbloqueando PDF...");
-    const buffer = await processPDFWithILovePDF(
-      "unlock",
-      req.file.path,
-      password
-    );
-
-    fs.writeFileSync(outputPath, buffer);
-    fs.unlinkSync(req.file.path);
-
-    console.log("PDF desbloqueado com sucesso:", outputName);
-
-    return res.json({
-      fileUrl: `${BASE_URL}/files/${outputName}`,
-    });
   } catch (error: any) {
-    console.error("Erro ao desbloquear PDF:");
+    console.error("Erro ao assinar PDF (base64):", error?.message ?? error);
 
-    if (error?.response?.data) {
-      console.error(JSON.stringify(error.response.data, null, 2));
-    } else {
-      console.error(error);
-    }
-
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-
-    return res.status(500).json({ error: "Erro ao desbloquear PDF." });
+    return res.status(500).json({
+      error: "Erro ao assinar PDF.",
+      detail: error?.message ?? String(error),
+    });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("API OK");
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("[ERRO GLOBAL]", err);
+
+  if (err?.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      error: "Arquivo muito grande.",
+      detail: "O limite atual foi excedido.",
+    });
+  }
+
+  return res.status(500).json({
+    error: "Erro interno no servidor.",
+    detail: err?.message ?? String(err),
+  });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
-  ;
+  console.log(`BASE_URL: ${BASE_URL}`);
+  console.log(`Upload dir: ${uploadDir}`);
 });
 
 const SELF_URL = process.env.RAILWAY_PUBLIC_DOMAIN
