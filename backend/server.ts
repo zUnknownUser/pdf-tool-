@@ -9,6 +9,14 @@ import path from "path";
 import { GoogleGenAI } from "@google/genai";
 import { PDFDocument, degrees, rgb } from "pdf-lib";
 
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+
 
 dotenv.config();
 const PORT = Number(process.env.PORT) || 3000;
