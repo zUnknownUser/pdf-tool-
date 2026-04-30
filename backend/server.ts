@@ -86,6 +86,7 @@ async function processSimpleILovePDFTask(
   return Buffer.from(data);
 }
 
+
 async function processPDFWithILovePDF(
   taskName: "protect" | "unlock",
   filePath: string,
@@ -94,14 +95,20 @@ async function processPDFWithILovePDF(
   const instance = getILovePDFInstance();
 
   const task = instance.newTask(taskName);
+
+  console.log(`[ilovepdf] Iniciando task: ${taskName}`);
   await task.start();
+  console.log(`[ilovepdf] Task iniciada`);
 
   const file = new ILovePDFFile(filePath);
   await task.addFile(file);
+  console.log(`[ilovepdf] Arquivo adicionado`);
 
   await task.process({ password });
+  console.log(`[ilovepdf] Processado`);
 
   const data = await task.download();
+  console.log(`[ilovepdf] Download ok`);
 
   return Buffer.from(data);
 }
@@ -469,6 +476,44 @@ app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
   }
 });
 
+app.post("/pdf/sign-base64", express.json({ limit: "30mb" }), async (req, res) => {
+  try {
+    const { pdfBase64, signatureBase64, page, x, y, width, height } = req.body;
+
+    if (!pdfBase64 || !signatureBase64) {
+      return res.status(400).json({ error: "PDF ou assinatura não enviados." });
+    }
+
+    const pdfBytes = Buffer.from(pdfBase64, "base64");
+    const sigBytes = Buffer.from(signatureBase64, "base64");
+
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const pages = pdfDoc.getPages();
+
+    const pageIndex = Math.max(0, Math.min((page ?? 1) - 1, pages.length - 1));
+    const pdfPage = pages[pageIndex];
+
+    const signatureImage = await pdfDoc.embedPng(sigBytes);
+
+    pdfPage.drawImage(signatureImage, {
+      x: x ?? 350,
+      y: y ?? 80,
+      width: width ?? 160,
+      height: height ?? 70,
+    });
+
+    const signedBytes = await pdfDoc.save();
+
+    const outputName = `signed-${Date.now()}.pdf`;
+    const outputPath = path.join("uploads", outputName);
+    fs.writeFileSync(outputPath, signedBytes);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (error) {
+    console.error("Erro ao assinar PDF (base64):", error);
+    return res.status(500).json({ error: "Erro ao assinar PDF." });
+  }
+});
 
 
 app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
