@@ -532,8 +532,7 @@ export default function ActionScreen() {
     return path;
   }
 
-  // ✅ CORRIGIDO — envia PDF e assinatura como base64 via JSON
-  // (dois arquivos não funcionam com uploadAsync, JSON+base64 é mais confiável)
+
   async function signPdfWithSignature(pdfUri: string, signUri: string) {
     const pdfBase64 = await FileSystem.readAsStringAsync(pdfUri, {
       encoding: FileSystem.EncodingType.Base64,

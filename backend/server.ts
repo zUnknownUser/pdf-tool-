@@ -29,7 +29,7 @@ const BASE_URL =
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
