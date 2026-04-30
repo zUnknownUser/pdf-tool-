@@ -753,10 +753,14 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`BASE_URL: ${BASE_URL}`);
   console.log(`Upload dir: ${uploadDir}`);
+});
+
+server.on("error", (err) => {
+  console.error("[SERVER ERROR]", err);
 });
 
 const SELF_URL = process.env.RAILWAY_PUBLIC_DOMAIN
