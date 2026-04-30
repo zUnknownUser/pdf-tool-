@@ -454,89 +454,72 @@ export default function ActionScreen() {
     return newUri;
   }
 
-  // ✅ CORRIGIDO — usa uploadAsync em vez de fetch + FormData
-  async function protectPdfWithPassword(pdfUri: string, pwd: string) {
-    if (!pwd.trim()) {
-      Alert.alert("Senha obrigatória", "Digite uma senha para proteger o PDF.");
-      return null;
-    }
-
-    const result = await FileSystem.uploadAsync(
-      `${API_BASE_URL}/pdf/protect`,
-      pdfUri,
-      {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "file",
-        mimeType: "application/pdf",
-        parameters: { password: pwd },
-      }
-    );
-
-    if (result.status !== 200) {
-      throw new Error(`Erro ${result.status}: ${result.body}`);
-    }
-
-    const data = JSON.parse(result.body);
-    if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-    const localUri = `${FileSystem.documentDirectory}protected-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-    return downloaded.uri;
+ async function protectPdfWithPassword(pdfUri: string, pwd: string) {
+  if (!pwd.trim()) {
+    Alert.alert("Senha obrigatória", "Digite uma senha para proteger o PDF.");
+    return null;
   }
 
-  // ✅ CORRIGIDO — usa uploadAsync em vez de fetch + FormData
-  async function unlockPdfWithPassword(pdfUri: string, pwd: string) {
-    if (!pwd.trim()) {
-      Alert.alert("Senha obrigatória", "Digite a senha atual do PDF.");
-      return null;
-    }
+  const pdfBase64 = await FileSystem.readAsStringAsync(pdfUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 
-    const result = await FileSystem.uploadAsync(
-      `${API_BASE_URL}/pdf/unlock`,
-      pdfUri,
-      {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "file",
-        mimeType: "application/pdf",
-        parameters: { password: pwd },
-      }
-    );
+  const response = await fetch(`${API_BASE_URL}/pdf/protect-base64`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pdfBase64, password: pwd, fileName: fileName ?? "documento.pdf" }),
+  });
 
-    if (result.status !== 200) {
-      throw new Error(`Erro ${result.status}: ${result.body}`);
-    }
+  if (!response.ok) throw new Error(`Erro ${response.status}`);
+  const data = await response.json();
 
-    const data = JSON.parse(result.body);
-    const localUri = `${FileSystem.documentDirectory}unlocked-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-    return downloaded.uri;
+  const localUri = `${FileSystem.documentDirectory}protected-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+  return downloaded.uri;
+}
+
+ async function unlockPdfWithPassword(pdfUri: string, pwd: string) {
+  if (!pwd.trim()) {
+    Alert.alert("Senha obrigatória", "Digite a senha atual do PDF.");
+    return null;
   }
 
-  // ✅ CORRIGIDO — usa uploadAsync em vez de fetch + FormData
+  const pdfBase64 = await FileSystem.readAsStringAsync(pdfUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  const response = await fetch(`${API_BASE_URL}/pdf/unlock-base64`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pdfBase64, password: pwd, fileName: fileName ?? "documento.pdf" }),
+  });
+
+  if (!response.ok) throw new Error(`Erro ${response.status}`);
+  const data = await response.json();
+
+  const localUri = `${FileSystem.documentDirectory}unlocked-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+  return downloaded.uri;
+}
+
   async function addWatermark(pdfUri: string, text: string) {
-    const result = await FileSystem.uploadAsync(
-      `${API_BASE_URL}/pdf/watermark`,
-      pdfUri,
-      {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "file",
-        mimeType: "application/pdf",
-        parameters: { text },
-      }
-    );
+  const pdfBase64 = await FileSystem.readAsStringAsync(pdfUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 
-    if (result.status !== 200) {
-      throw new Error(`Erro ${result.status}: ${result.body}`);
-    }
+  const response = await fetch(`${API_BASE_URL}/pdf/watermark-base64`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pdfBase64, text, fileName: fileName ?? "documento.pdf" }),
+  });
 
-    const data = JSON.parse(result.body);
-    const localUri = `${FileSystem.documentDirectory}watermark-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-    return downloaded.uri;
-  }
+  if (!response.ok) throw new Error(`Erro ${response.status}`);
+  const data = await response.json();
+
+  const localUri = `${FileSystem.documentDirectory}watermark-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+  return downloaded.uri;
+}
 
   async function saveSignatureToFile(signatureBase64: string) {
     const cleanBase64 = signatureBase64.replace("data:image/png;base64,", "");

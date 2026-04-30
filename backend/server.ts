@@ -121,6 +121,80 @@ async function processPDFWithILovePDF(
   return Buffer.from(data);
 }
 
+app.post("/pdf/protect-base64", express.json({ limit: "30mb" }), async (req, res) => {
+  try {
+    const { pdfBase64, password } = req.body;
+    if (!pdfBase64 || !password) return res.status(400).json({ error: "Dados incompletos." });
+
+    const inputName = `input-${Date.now()}.pdf`;
+    const inputPath = path.join("uploads", inputName);
+    fs.writeFileSync(inputPath, Buffer.from(pdfBase64, "base64"));
+
+    const buffer = await processPDFWithILovePDF("protect", inputPath, password);
+    fs.unlinkSync(inputPath);
+
+    const outputName = `protected-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join("uploads", outputName), buffer);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (err) {
+    console.error("Erro protect-base64:", err);
+    return res.status(500).json({ error: "Erro ao proteger PDF." });
+  }
+});
+
+app.post("/pdf/unlock-base64", express.json({ limit: "30mb" }), async (req, res) => {
+  try {
+    const { pdfBase64, password } = req.body;
+    if (!pdfBase64 || !password) return res.status(400).json({ error: "Dados incompletos." });
+
+    const inputName = `input-${Date.now()}.pdf`;
+    const inputPath = path.join("uploads", inputName);
+    fs.writeFileSync(inputPath, Buffer.from(pdfBase64, "base64"));
+
+    const buffer = await processPDFWithILovePDF("unlock", inputPath, password);
+    fs.unlinkSync(inputPath);
+
+    const outputName = `unlocked-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join("uploads", outputName), buffer);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (err) {
+    console.error("Erro unlock-base64:", err);
+    return res.status(500).json({ error: "Erro ao desbloquear PDF." });
+  }
+});
+
+app.post("/pdf/watermark-base64", express.json({ limit: "30mb" }), async (req, res) => {
+  try {
+    const { pdfBase64, text } = req.body;
+    if (!pdfBase64 || !text) return res.status(400).json({ error: "Dados incompletos." });
+
+    const pdfBytes = Buffer.from(pdfBase64, "base64");
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+
+    pdfDoc.getPages().forEach((page) => {
+      const { width, height } = page.getSize();
+      page.drawText(String(text).trim(), {
+        x: width / 4,
+        y: height / 2,
+        size: 40,
+        opacity: 0.2,
+        rotate: degrees(-30),
+        color: rgb(0.3, 0.3, 0.3),
+      });
+    });
+
+    const outputName = `watermark-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join("uploads", outputName), await pdfDoc.save());
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (err) {
+    console.error("Erro watermark-base64:", err);
+    return res.status(500).json({ error: "Erro ao aplicar marca d'água." });
+  }
+});
+
 app.post("/ai/pdf-tools", async (req, res) => {
   try {
     const { action, text } = req.body;
