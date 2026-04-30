@@ -583,3 +583,18 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   ;
 });
+
+const SELF_URL = process.env.RAILWAY_PUBLIC_DOMAIN
+  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+  : null;
+
+if (SELF_URL) {
+  setInterval(async () => {
+    try {
+      await fetch(`${SELF_URL}/`);
+      console.log("[keep-alive] ping ok");
+    } catch (err) {
+      console.warn("[keep-alive] ping falhou:", err);
+    }
+  }, 4 * 60 * 1000);
+}
