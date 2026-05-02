@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+
 import { styles } from "../styles/action.styles";
 import {
   View,
@@ -32,7 +33,7 @@ import {
   Combine,
   Scissors,
   RotateCw,
-  ListOrdered,
+  Camera,
   Trash2,
   Unlock,
   PenLine,
@@ -41,6 +42,7 @@ import {
   Files,
   Sparkles,
   Eye,
+  FileText,
   Crown,
   Brain,
 } from "lucide-react-native";
@@ -57,16 +59,24 @@ const presets = [
   "LinkedIn 5MB",
 ];
 
+const presetToLevel: Record<string, string> = {
+  "WhatsApp 16MB": "low",
+  "Email 10MB":    "recommended",
+  "Concurso 2MB":  "extreme",
+  "Receita 3MB":   "extreme",
+  "LinkedIn 5MB":  "recommended",
+};
+
 const titles: Record<string, string> = {
   compress: "Comprimir PDF",
   "image-to-pdf": "Imagem para PDF",
-  "pdf-to-image": "PDF para imagem",
+  "pdf-to-word": "PDF para Word",
   merge: "Juntar PDFs",
   split: "Dividir PDF",
   batch: "Modo lote",
   "smart-picker": "Ação inteligente",
   rotate: "Rotacionar PDF",
-  reorder: "Reordenar páginas",
+  scan: "Escanear PDF",
   "remove-pages": "Remover páginas",
   protect: "Proteger PDF",
   unlock: "Desbloquear PDF",
@@ -159,11 +169,12 @@ export default function ActionScreen() {
   const icon = useMemo(() => {
     if (type === "image-to-pdf") return <Images size={26} color="#007AFF" />;
     if (type === "merge") return <Combine size={26} color="#007AFF" />;
+    if (type === "pdf-to-word") return <FileText size={26} color="#007AFF" />;
     if (type === "split") return <Scissors size={26} color="#007AFF" />;
     if (type === "batch") return <Files size={26} color="#007AFF" />;
     if (type === "smart-picker") return <Sparkles size={26} color="#7C3AED" />;
     if (type === "rotate") return <RotateCw size={26} color="#007AFF" />;
-    if (type === "reorder") return <ListOrdered size={26} color="#007AFF" />;
+    if (type === "scan") return <Camera size={26} color="#007AFF" />;   
     if (type === "remove-pages") return <Trash2 size={26} color="#007AFF" />;
     if (type === "protect") return <Lock size={26} color="#007AFF" />;
     if (type === "unlock") return <Unlock size={26} color="#007AFF" />;
@@ -183,6 +194,8 @@ export default function ActionScreen() {
     if (type === "batch") return `Selecione até ${BATCH_FREE_LIMIT} arquivos no plano grátis.`;
     if (type === "preview") return "Abra, confira e compartilhe seu PDF.";
     if (type === "premium") return "Libere processamento ilimitado e ferramentas avançadas.";
+    if (type === "scan") return "Fotografe um documento e converta para PDF."; 
+    if (type === "pdf-to-word") return "Converta seu PDF em documento Word editável.";
     return "Escolha o arquivo e processe em segundos.";
   }, [type]);
 
@@ -439,6 +452,8 @@ export default function ActionScreen() {
     return imagesToPdf([{ uri: imageUri }]);
   }
 
+
+
   async function fakeCopyPdf(actionName: string) {
     if (!fileUri) {
       Alert.alert("Selecione um PDF primeiro.");
@@ -670,7 +685,7 @@ export default function ActionScreen() {
       return;
     }
 
-    if (type !== "image-to-pdf" && !hasSelectedFile) {
+    if (type !== "image-to-pdf" && type !== "scan" && !hasSelectedFile) {
       Alert.alert("Selecione um arquivo primeiro.");
       return;
     }
@@ -862,23 +877,224 @@ export default function ActionScreen() {
       }
 
       if (type === "compress") {
-        const newUri = await fakeCopyPdf("compress");
-        if (!newUri) return;
+  if (!fileUri) {
+    Alert.alert("Selecione um PDF primeiro.");
+    return;
+  }
 
-        setOutputUri(newUri);
-        setProcessed(true);
+  const safeUri = await prepareFileForUpload(fileUri, "pdf");
 
-        await saveToHistory({
-          id: Date.now().toString(),
-          name: `comprimido-${fileName ?? "arquivo.pdf"}`,
-          uri: newUri,
-          date: new Date().toISOString(),
-          size: fileSize,
-        });
+  const formData = new FormData();
+  formData.append("file", {
+    uri: safeUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
 
-        Alert.alert("Compressão simulada");
-        return;
-      }
+  formData.append("compression_level", presetToLevel[selectedPreset] ?? "recommended");
+
+  const response = await fetch(`${API_BASE_URL}/pdf/compress`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+
+  const localUri = `${FileSystem.documentDirectory}compressed-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  setOutputUri(downloaded.uri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `comprimido-${fileName ?? "arquivo.pdf"}`,
+    uri: downloaded.uri,
+    date: new Date().toISOString(),
+    size: fileSize,
+  });
+
+  Alert.alert("PDF comprimido", "Seu PDF foi comprimido com sucesso.");
+  return;
+}
+
+if (type === "scan") {
+  // 1. Pede permissão da câmera
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    Alert.alert("Permissão necessária", "Permita acesso à câmera.");
+    return;
+  }
+
+  // 2. Abre a câmera
+  const result = await ImagePicker.launchCameraAsync({ quality: 1 });
+  if (result.canceled) return;
+
+  // 3. Converte a foto em PDF (usando a função que já existe)
+  const pdfUri = await imagesToPdf(result.assets);
+
+  // 4. Salva e atualiza o estado
+  setOutputUri(pdfUri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `scan-${Date.now()}.pdf`,
+    uri: pdfUri,
+    date: new Date().toISOString(),
+  });
+
+  Alert.alert("PDF criado", "Documento escaneado com sucesso.");
+  return;
+}
+
+if (type === "merge") {
+  if (selectedFiles.length < 2) {
+    Alert.alert("Selecione pelo menos 2 PDFs.");
+    return;
+  }
+
+  const formData = new FormData();
+  for (const file of selectedFiles) {
+    const safeUri = await prepareFileForUpload(file.uri, "pdf");
+    formData.append("files", {
+      uri: safeUri,
+      name: file.name ?? "documento.pdf",
+      type: "application/pdf",
+    } as any);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/pdf/merge`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+
+  const localUri = `${FileSystem.documentDirectory}merged-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  setOutputUri(downloaded.uri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `unido-${Date.now()}.pdf`,
+    uri: downloaded.uri,
+    date: new Date().toISOString(),
+  });
+
+  Alert.alert("PDFs unidos", "Seus arquivos foram unidos com sucesso.");
+  return;
+}
+
+if (type === "split") {
+  if (!fileUri) {
+    Alert.alert("Selecione um PDF primeiro.");
+    return;
+  }
+
+  if (!pageRange.trim()) {
+    Alert.alert("Digite o intervalo de páginas.", "Ex: 1-3, 5, 8");
+    return;
+  }
+
+  const safeUri = await prepareFileForUpload(fileUri, "pdf");
+
+  const formData = new FormData();
+  formData.append("file", {
+    uri: safeUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+  formData.append("ranges", pageRange.trim());
+
+  const response = await fetch(`${API_BASE_URL}/pdf/split`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+
+  const localUri = `${FileSystem.documentDirectory}split-${Date.now()}.zip`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  setOutputUri(downloaded.uri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `dividido-${Date.now()}.zip`,
+    uri: downloaded.uri,
+    date: new Date().toISOString(),
+  });
+
+  Alert.alert("PDF dividido", "Seu PDF foi dividido com sucesso. O resultado é um .zip.");
+  return;
+}
+
+if (type === "pdf-to-word") {
+  if (!fileUri) {
+    Alert.alert("Selecione um PDF primeiro.");
+    return;
+  }
+
+  const safeUri = await prepareFileForUpload(fileUri, "pdf");
+
+  const formData = new FormData();
+  formData.append("file", {
+    uri: safeUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+
+  const response = await fetch(`${API_BASE_URL}/pdf/pdf-to-word`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+
+  const localUri = `${FileSystem.documentDirectory}word-${Date.now()}.docx`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  setOutputUri(downloaded.uri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `word-${fileName ?? "arquivo.docx"}`,
+    uri: downloaded.uri,
+    date: new Date().toISOString(),
+  });
+
+  Alert.alert("Convertido!", "Seu PDF foi convertido para Word com sucesso.");
+  return;
+}
 
       const newUri = await fakeCopyPdf(type);
 
@@ -938,7 +1154,7 @@ export default function ActionScreen() {
       );
     }
 
-    if (type === "split" || type === "remove-pages" || type === "reorder") {
+    if (type === "split" || type === "remove-pages") {
       return (
         <View style={styles.extraBox}>
           <Text style={styles.extraLabel}>Páginas</Text>

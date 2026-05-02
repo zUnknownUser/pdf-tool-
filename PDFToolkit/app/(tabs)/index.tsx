@@ -22,12 +22,14 @@ import {
   RotateCw,
   ListOrdered,
   Trash2,
+  Camera,
   Lock,
   Unlock,
   PenLine,
   Droplets,
   ScanText,
   Files,
+  FileText,
   ChevronRight,
 } from "lucide-react-native";
 import { getHistory, HistoryItem } from "../../utils/history";
@@ -201,12 +203,12 @@ export default function HomeScreen() {
           onPress={() => openAction("image-to-pdf")}
         />
 
-        <ActionCard
-          title="PDF para imagem"
-          subtitle="Extraia páginas."
-          icon={<FileImage size={22} color="#007AFF" />}
-          onPress={() => openAction("pdf-to-image")}
-        />
+       <ActionCard
+     title="PDF para Word"
+     subtitle="Converta documentos."
+      icon={<FileText size={22} color="#007AFF" />}
+      onPress={() => openAction("pdf-to-word")}
+       /> 
 
         <ActionCard
           title="Juntar PDFs"
@@ -243,11 +245,12 @@ export default function HomeScreen() {
         />
 
         <ActionCard
-          title="Reordenar"
-          subtitle="Mude a ordem."
-          icon={<ListOrdered size={22} color="#007AFF" />}
-          onPress={() => openAction("reorder")}
-        />
+       title="Escanear PDF"
+       subtitle="Use a câmera."
+       badge="Novo"
+  icon={<Camera size={22} color="#007AFF" />}
+  onPress={() => openAction("scan")}
+     />
 
         <ActionCard
           title="Remover páginas"

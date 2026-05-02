@@ -483,10 +483,12 @@ app.post("/pdf/compress", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
     }
 
-    const buffer = await processSimpleILovePDFTask("compress", [req.file.path], {
-      compression_level: "recommended",
-    });
+    const level = req.body.compression_level ?? "recommended";
 
+    const buffer = await processSimpleILovePDFTask("compress", [req.file.path], {
+      compression_level: level,
+    });
+    
     const outputName = `compressed-${Date.now()}.pdf`;
     const outputPath = path.join(uploadDir, outputName);
 
@@ -502,6 +504,43 @@ app.post("/pdf/compress", upload.single("file"), async (req, res) => {
 
     return res.status(500).json({
       error: "Erro ao comprimir PDF.",
+      detail: error?.message ?? String(error),
+    });
+  }
+});
+
+app.post("/pdf/pdf-to-word", upload.single("file"), async (req, res) => {
+  try {
+    console.log("======= NOVA REQUISIÇÃO /pdf/pdf-to-word =======");
+
+    if (!req.file) {
+      return res.status(400).json({ error: "Arquivo não enviado." });
+    }
+
+    if (req.file.mimetype !== "application/pdf") {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+    }
+
+   const buffer = await processSimpleILovePDFTask("pdfoffice" as any, [req.file.path], {
+  output_format: "docx",
+});
+
+    const outputName = `word-${Date.now()}.docx`;
+    const outputPath = path.join(uploadDir, outputName);
+
+    fs.writeFileSync(outputPath, buffer);
+    cleanupFile(req.file.path);
+
+    return res.json({
+      fileUrl: `${BASE_URL}/files/${outputName}`,
+    });
+  } catch (error: any) {
+    console.error("Erro ao converter PDF para Word:", error?.message ?? error);
+    cleanupFile(req.file?.path);
+
+    return res.status(500).json({
+      error: "Erro ao converter PDF para Word.",
       detail: error?.message ?? String(error),
     });
   }
