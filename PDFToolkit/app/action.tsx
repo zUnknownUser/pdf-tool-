@@ -1,7 +1,18 @@
 import { useMemo, useState } from "react";
 import { presentPaywall } from "@/lib/revenuecat";
 import { styles } from "../styles/action.styles";
-import { tryRequestReview } from "../utils/reviewManager";
+import { postFormDataAndGetFileUrl } from "../utils/apiError";
+
+import {
+  formatToolError,
+  getFreeLimitError,
+  getFriendlyError,
+  getNoFileError,
+  getPremiumRequiredError,
+} from "../utils/appErrors";
+
+import { showAppError } from "../utils/showAppError";
+
 import {
   View,
   Text,
@@ -11,6 +22,7 @@ import {
   ActivityIndicator,
   TextInput,
 } from "react-native";
+
 import { useLocalSearchParams } from "expo-router";
 import { saveToHistory } from "../utils/history";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -62,10 +74,10 @@ const presets = [
 
 const presetToLevel: Record<string, string> = {
   "WhatsApp 16MB": "low",
-  "Email 10MB":    "recommended",
-  "Concurso 2MB":  "extreme",
-  "Receita 3MB":   "extreme",
-  "LinkedIn 5MB":  "recommended",
+  "Email 10MB": "recommended",
+  "Concurso 2MB": "extreme",
+  "Receita 3MB": "extreme",
+  "LinkedIn 5MB": "recommended",
 };
 
 const titles: Record<string, string> = {
@@ -90,9 +102,11 @@ const titles: Record<string, string> = {
 
 function formatBytes(bytes?: number | null) {
   if (!bytes) return "Tamanho desconhecido";
+
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
+
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
@@ -159,7 +173,7 @@ export default function ActionScreen() {
   const [processed, setProcessed] = useState(!!params.uri);
   const [loading, setLoading] = useState(false);
 
-  const API_BASE_URL = "https://pdf-tool-production-4307.up.railway.app"; //Trocar aqui quando bugar a API
+  const API_BASE_URL = "https://pdf-tool-production-4307.up.railway.app";
   const AI_API_URL = `${API_BASE_URL}/ai/pdf-tools`;
 
   const [password, setPassword] = useState("");
@@ -180,7 +194,7 @@ export default function ActionScreen() {
     if (type === "batch") return <Files size={26} color="#007AFF" />;
     if (type === "smart-picker") return <Sparkles size={26} color="#7C3AED" />;
     if (type === "rotate") return <RotateCw size={26} color="#007AFF" />;
-    if (type === "scan") return <Camera size={26} color="#007AFF" />;   
+    if (type === "scan") return <Camera size={26} color="#007AFF" />;
     if (type === "remove-pages") return <Trash2 size={26} color="#007AFF" />;
     if (type === "protect") return <Lock size={26} color="#007AFF" />;
     if (type === "unlock") return <Unlock size={26} color="#007AFF" />;
@@ -189,6 +203,7 @@ export default function ActionScreen() {
     if (type === "ocr") return <ScanText size={26} color="#007AFF" />;
     if (type === "preview") return <Eye size={26} color="#007AFF" />;
     if (type === "premium") return <Crown size={26} color="#B45309" />;
+
     return <File size={26} color="#007AFF" />;
   }, [type]);
 
@@ -196,12 +211,14 @@ export default function ActionScreen() {
     if (type === "ocr") {
       return "Extraia texto de imagens e use IA para resumir, explicar ou gerar perguntas.";
     }
+
     if (type === "smart-picker") return "Selecione um arquivo e o app sugere a melhor ação.";
     if (type === "batch") return `Selecione até ${BATCH_FREE_LIMIT} arquivos no plano grátis.`;
     if (type === "preview") return "Abra, confira e compartilhe seu PDF.";
     if (type === "premium") return "Libere processamento ilimitado e ferramentas avançadas.";
-    if (type === "scan") return "Fotografe um documento e converta para PDF."; 
+    if (type === "scan") return "Fotografe um documento e converta para PDF.";
     if (type === "pdf-to-word") return "Converta seu PDF em documento Word editável.";
+
     return "Escolha o arquivo e processe em segundos.";
   }, [type]);
 
@@ -258,7 +275,10 @@ export default function ActionScreen() {
       if (type === "smart-picker") suggestAction(assets);
     } catch (err) {
       console.error("Erro pickFile:", err);
-      Alert.alert("Erro", "Falha ao selecionar arquivo.");
+
+      showAppError(formatToolError(err, "file-picker"), {
+        onTryAgain: pickFile,
+      });
     }
   }
 
@@ -267,7 +287,13 @@ export default function ActionScreen() {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert("Permissão necessária", "Permita acesso à galeria.");
+        showAppError(
+          getFriendlyError(
+            new Error("Permissão da galeria negada"),
+            "gallery",
+            "GALLERY_PERMISSION_DENIED"
+          )
+        );
         return;
       }
 
@@ -297,7 +323,10 @@ export default function ActionScreen() {
       setAiResult("");
     } catch (err) {
       console.error("Erro pickImageFromGallery:", err);
-      Alert.alert("Erro", "Não foi possível abrir a galeria.");
+
+      showAppError(formatToolError(err, "gallery"), {
+        onTryAgain: pickImageFromGallery,
+      });
     }
   }
 
@@ -306,6 +335,7 @@ export default function ActionScreen() {
       const allPdf = files.every((f) =>
         String(f.mimeType || f.name).toLowerCase().includes("pdf")
       );
+
       if (allPdf) {
         Alert.alert(
           "Sugestão",
@@ -343,16 +373,21 @@ export default function ActionScreen() {
 
   async function runOCR() {
     if (!fileUri) {
-      Alert.alert("Selecione uma imagem primeiro.");
+      showAppError(getNoFileError("ocr"), {
+        onPickImage: pickImageFromGallery,
+        onPickFile: pickFile,
+      });
       return;
     }
 
     const allowed = await checkLimit("ocr");
+
     if (!allowed) {
-      Alert.alert(
-        "Limite diário atingido",
-        "Você usou suas 2 leituras de texto gratuitas de hoje. Assine o Premium para uso ilimitado."
-      );
+      showAppError(getFreeLimitError("ocr"), {
+        onGoPremium: async () => {
+          await presentPaywall();
+        },
+      });
       return;
     }
 
@@ -364,7 +399,9 @@ export default function ActionScreen() {
       const text = result?.text?.trim() ?? "";
 
       if (!text) {
-        Alert.alert("Pronto!", "Nenhum texto foi encontrado na imagem.");
+        showAppError(getFriendlyError(new Error("Nenhum texto encontrado"), "ocr", "OCR_NO_TEXT_FOUND"), {
+          onPickImage: pickImageFromGallery,
+        });
         return;
       }
 
@@ -376,10 +413,11 @@ export default function ActionScreen() {
       Alert.alert("OCR concluído", "Texto extraído com sucesso.");
     } catch (err) {
       console.error("Erro OCR:", err);
-      Alert.alert(
-        "Erro no OCR",
-        "Não foi possível ler o texto da imagem. Essa função precisa rodar em Dev Build ou build nativa, não no Expo Go."
-      );
+
+      showAppError(formatToolError(err, "ocr"), {
+        onTryAgain: runOCR,
+        onPickImage: pickImageFromGallery,
+      });
     } finally {
       setLoading(false);
     }
@@ -387,7 +425,7 @@ export default function ActionScreen() {
 
   async function askAI(action: "summary" | "important" | "questions" | "explain") {
     if (!ocrText) {
-      Alert.alert("Faça o OCR primeiro.");
+      showAppError(getFriendlyError(new Error("Texto vazio"), "ai", "AI_EMPTY_TEXT"));
       return;
     }
 
@@ -400,13 +438,19 @@ export default function ActionScreen() {
         body: JSON.stringify({ action, text: ocrText }),
       });
 
-      if (!response.ok) throw new Error(`Status ${response.status}`);
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(err || `Status ${response.status}`);
+      }
 
       const data = await response.json();
       setAiResult(data.result ?? "A IA não retornou resultado.");
     } catch (err) {
       console.error("Erro askAI:", err);
-      Alert.alert("Erro na IA", `Não foi possível usar a IA agora. ${err}`);
+
+      showAppError(formatToolError(err, "ai"), {
+        onTryAgain: () => askAI(action),
+      });
     } finally {
       setAiLoading(false);
     }
@@ -458,11 +502,11 @@ export default function ActionScreen() {
     return imagesToPdf([{ uri: imageUri }]);
   }
 
-
-
   async function fakeCopyPdf(actionName: string) {
     if (!fileUri) {
-      Alert.alert("Selecione um PDF primeiro.");
+      showAppError(getNoFileError(type as any), {
+        onPickFile: pickFile,
+      });
       return null;
     }
 
@@ -476,7 +520,13 @@ export default function ActionScreen() {
 
   async function protectPdfWithPassword(pdfUri: string, pwd: string) {
     if (!pwd.trim()) {
-      Alert.alert("Senha obrigatória", "Digite uma senha para proteger o PDF.");
+      showAppError(
+        getFriendlyError(
+          new Error("Senha obrigatória"),
+          "protect",
+          "PASSWORD_REQUIRED"
+        )
+      );
       return null;
     }
 
@@ -490,28 +540,26 @@ export default function ActionScreen() {
     } as any);
     formData.append("password", pwd);
 
-    const response = await fetch(`${API_BASE_URL}/pdf/protect`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(err);
-    }
-
-    const data = await response.json();
-    if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+    const fileUrl = await postFormDataAndGetFileUrl(
+      `${API_BASE_URL}/pdf/protect`,
+      formData
+    );
 
     const localUri = `${FileSystem.documentDirectory}protected-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+    const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
 
     return downloaded.uri;
   }
 
   async function unlockPdfWithPassword(pdfUri: string, pwd: string) {
     if (!pwd.trim()) {
-      Alert.alert("Senha obrigatória", "Digite a senha atual do PDF.");
+      showAppError(
+        getFriendlyError(
+          new Error("Senha obrigatória"),
+          "unlock",
+          "PASSWORD_REQUIRED"
+        )
+      );
       return null;
     }
 
@@ -525,28 +573,26 @@ export default function ActionScreen() {
     } as any);
     formData.append("password", pwd);
 
-    const response = await fetch(`${API_BASE_URL}/pdf/unlock`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(err);
-    }
-
-    const data = await response.json();
-    if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+    const fileUrl = await postFormDataAndGetFileUrl(
+      `${API_BASE_URL}/pdf/unlock`,
+      formData
+    );
 
     const localUri = `${FileSystem.documentDirectory}unlocked-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+    const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
 
     return downloaded.uri;
   }
 
   async function addWatermark(pdfUri: string, text: string) {
     if (!text.trim()) {
-      Alert.alert("Texto obrigatório", "Digite o texto da marca d'água.");
+      showAppError(
+        getFriendlyError(
+          new Error("Texto da marca d'água obrigatório"),
+          "watermark",
+          "WATERMARK_TEXT_REQUIRED"
+        )
+      );
       return null;
     }
 
@@ -558,23 +604,15 @@ export default function ActionScreen() {
       name: fileName ?? "documento.pdf",
       type: "application/pdf",
     } as any);
-    formData.append("text", text);
+    formData.append("text", text.trim());
 
-    const response = await fetch(`${API_BASE_URL}/pdf/watermark`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(err);
-    }
-
-    const data = await response.json();
-    if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+    const fileUrl = await postFormDataAndGetFileUrl(
+      `${API_BASE_URL}/pdf/watermark`,
+      formData
+    );
 
     const localUri = `${FileSystem.documentDirectory}watermark-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+    const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
 
     return downloaded.uri;
   }
@@ -613,21 +651,13 @@ export default function ActionScreen() {
     formData.append("width", "160");
     formData.append("height", "70");
 
-    const response = await fetch(`${API_BASE_URL}/pdf/sign`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Erro ao assinar: ${err}`);
-    }
-
-    const data = await response.json();
-    if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+    const fileUrl = await postFormDataAndGetFileUrl(
+      `${API_BASE_URL}/pdf/sign`,
+      formData
+    );
 
     const localUri = `${FileSystem.documentDirectory}signed-${Date.now()}.pdf`;
-    const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+    const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
 
     return downloaded.uri;
   }
@@ -643,11 +673,14 @@ export default function ActionScreen() {
       setLoading(true);
 
       if (!fileUri) {
-        Alert.alert("Erro", "PDF não encontrado.");
+        showAppError(getNoFileError("sign"), {
+          onPickFile: pickFile,
+        });
         return;
       }
 
-      const signedUri = await signPdfWithSignature(fileUri, savedUri);
+      const pdfUri = fileUri;
+      const signedUri = await signPdfWithSignature(pdfUri, savedUri);
 
       setOutputUri(signedUri);
       setProcessed(true);
@@ -663,7 +696,13 @@ export default function ActionScreen() {
       Alert.alert("PDF assinado", "Sua assinatura foi salva e aplicada ao PDF.");
     } catch (error) {
       console.error("Erro ao finalizar assinatura:", error);
-      Alert.alert("Erro", `Não foi possível finalizar a assinatura. ${error}`);
+
+      showAppError(formatToolError(error, "sign"), {
+        onTryAgain: () => {
+          setShowSignaturePad(true);
+        },
+        onPickFile: pickFile,
+      });
     } finally {
       setLoading(false);
     }
@@ -673,24 +712,27 @@ export default function ActionScreen() {
     const hasGalleryImages = selectedImages.length > 0;
     const hasSelectedFile = !!fileUri || selectedFiles.length > 0;
 
-if (type === "premium") {
-  try {
-    setLoading(true);
+    if (type === "premium") {
+      try {
+        setLoading(true);
 
-    const success = await presentPaywall();
+        const success = await presentPaywall();
 
-    if (success) {
-      Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
+        if (success) {
+          Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
+        }
+      } catch (error) {
+        console.log("Erro ao abrir paywall:", error);
+
+        showAppError(formatToolError(error, "premium"), {
+          onTryAgain: processFile,
+        });
+      } finally {
+        setLoading(false);
+      }
+
+      return;
     }
-  } catch (error) {
-    console.log("Erro ao abrir paywall:", error);
-    Alert.alert("Erro", "Não foi possível abrir a tela de assinatura.");
-  } finally {
-    setLoading(false);
-  }
-
-  return;
-}
 
     if (type === "ocr") {
       await runOCR();
@@ -703,30 +745,37 @@ if (type === "premium") {
     }
 
     if (type !== "image-to-pdf" && type !== "scan" && !hasSelectedFile) {
-      Alert.alert("Selecione um arquivo primeiro.");
+      showAppError(getNoFileError(type as any), {
+        onPickFile: pickFile,
+        onPickImage: pickImageFromGallery,
+      });
       return;
     }
 
     if (type === "image-to-pdf" && !fileUri && !hasGalleryImages) {
-      Alert.alert("Selecione uma imagem primeiro.");
+      showAppError(getNoFileError("image-to-pdf"), {
+        onPickFile: pickFile,
+        onPickImage: pickImageFromGallery,
+      });
       return;
     }
 
     if (type === "batch") {
-  const isPremium = await checkPremium();
-  const count = selectedFiles.length || 1;
+      const isPremium = await checkPremium();
+      const count = selectedFiles.length || 1;
 
-  if (!isPremium && count > BATCH_FREE_LIMIT) {
-    Alert.alert(
-      "Limite do plano grátis",
-      `O plano grátis permite até ${BATCH_FREE_LIMIT} arquivos. Assine o Premium para uso ilimitado.`
-    );
-    return;
-  }
+      if (!isPremium && count > BATCH_FREE_LIMIT) {
+        showAppError(getFriendlyError(new Error("Muitos arquivos"), "batch", "TOO_MANY_FILES"), {
+          onGoPremium: async () => {
+            await presentPaywall();
+          },
+        });
+        return;
+      }
 
-  Alert.alert("Modo lote pronto", `${count} arquivo(s) selecionado(s).`);
-  return;
-}
+      Alert.alert("Modo lote pronto", `${count} arquivo(s) selecionado(s).`);
+      return;
+    }
 
     if (type === "smart-picker") {
       Alert.alert("Ação inteligente", "Sugestão já exibida.");
@@ -738,11 +787,15 @@ if (type === "premium") {
 
       if (type === "protect") {
         if (!fileUri) {
-          Alert.alert("Selecione um PDF primeiro.");
+          showAppError(getNoFileError("protect"), {
+            onPickFile: pickFile,
+          });
           return;
         }
 
-        const protectedUri = await protectPdfWithPassword(fileUri, password);
+        const pdfUri = fileUri;
+        const protectedUri = await protectPdfWithPassword(pdfUri, password);
+
         if (!protectedUri) return;
 
         setOutputUri(protectedUri);
@@ -762,16 +815,15 @@ if (type === "premium") {
 
       if (type === "watermark") {
         if (!fileUri) {
-          Alert.alert("Selecione um PDF primeiro.");
+          showAppError(getNoFileError("watermark"), {
+            onPickFile: pickFile,
+          });
           return;
         }
 
-        if (!watermarkText.trim()) {
-          Alert.alert("Digite o texto da marca d'água.");
-          return;
-        }
+        const pdfUri = fileUri;
+        const newUri = await addWatermark(pdfUri, watermarkText.trim());
 
-        const newUri = await addWatermark(fileUri, watermarkText.trim());
         if (!newUri) return;
 
         setOutputUri(newUri);
@@ -791,11 +843,15 @@ if (type === "premium") {
 
       if (type === "unlock") {
         if (!fileUri) {
-          Alert.alert("Selecione um PDF primeiro.");
+          showAppError(getNoFileError("unlock"), {
+            onPickFile: pickFile,
+          });
           return;
         }
 
-        const unlockedUri = await unlockPdfWithPassword(fileUri, password);
+        const pdfUri = fileUri;
+        const unlockedUri = await unlockPdfWithPassword(pdfUri, password);
+
         if (!unlockedUri) return;
 
         setOutputUri(unlockedUri);
@@ -815,10 +871,13 @@ if (type === "premium") {
 
       if (type === "sign") {
         if (!fileUri) {
-          Alert.alert("Selecione um PDF primeiro.");
+          showAppError(getNoFileError("sign"), {
+            onPickFile: pickFile,
+          });
           return;
         }
 
+        const pdfUri = fileUri;
         const saved = await AsyncStorage.getItem(SAVED_SIGNATURE_KEY);
 
         if (saved) {
@@ -835,7 +894,7 @@ if (type === "premium") {
                     setLoading(true);
                     setSignatureUri(saved);
 
-                    const signedUri = await signPdfWithSignature(fileUri, saved);
+                    const signedUri = await signPdfWithSignature(pdfUri, saved);
 
                     setOutputUri(signedUri);
                     setProcessed(true);
@@ -851,7 +910,35 @@ if (type === "premium") {
                     Alert.alert("PDF assinado", "Sua assinatura salva foi usada.");
                   } catch (error) {
                     console.error("Erro ao usar assinatura salva:", error);
-                    Alert.alert("Erro", `Não foi possível usar a assinatura salva. ${error}`);
+
+                    showAppError(formatToolError(error, "sign"), {
+                      onTryAgain: async () => {
+                        try {
+                          setLoading(true);
+                          setSignatureUri(saved);
+
+                          const signedUri = await signPdfWithSignature(pdfUri, saved);
+
+                          setOutputUri(signedUri);
+                          setProcessed(true);
+
+                          await saveToHistory({
+                            id: Date.now().toString(),
+                            name: `assinado-${fileName ?? "arquivo.pdf"}`,
+                            uri: signedUri,
+                            date: new Date().toISOString(),
+                            size: fileSize,
+                          });
+
+                          Alert.alert("PDF assinado", "Sua assinatura salva foi usada.");
+                        } catch (err) {
+                          showAppError(formatToolError(err, "sign"));
+                        } finally {
+                          setLoading(false);
+                        }
+                      },
+                      onPickFile: pickFile,
+                    });
                   } finally {
                     setLoading(false);
                   }
@@ -895,337 +982,346 @@ if (type === "premium") {
       }
 
       if (type === "compress") {
-         const allowed = await checkLimit("compress");
-  if (!allowed) {
-    Alert.alert(
-      "Limite diário atingido",
-      "Você usou suas 3 compressões gratuitas de hoje. Assine o Premium para uso ilimitado."
-    );
-    return;
-  }
-  if (!fileUri) {
-    Alert.alert("Selecione um PDF primeiro.");
-    return;
-  }
-
-  const safeUri = await prepareFileForUpload(fileUri, "pdf");
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: safeUri,
-    name: fileName ?? "documento.pdf",
-    type: "application/pdf",
-  } as any);
-
-  formData.append("compression_level", presetToLevel[selectedPreset] ?? "recommended");
-
-  const response = await fetch(`${API_BASE_URL}/pdf/compress`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-  }
-
-  const data = await response.json();
-  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-  const localUri = `${FileSystem.documentDirectory}compressed-${Date.now()}.pdf`;
-  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-
-  setOutputUri(downloaded.uri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `comprimido-${fileName ?? "arquivo.pdf"}`,
-    uri: downloaded.uri,
-    date: new Date().toISOString(),
-    size: fileSize,
-  });
-
-  Alert.alert("PDF comprimido", "Seu PDF foi comprimido com sucesso.");
-  await incrementLimit("compress");
-  return;
-}
-
-if (type === "scan") {
-  const permission = await ImagePicker.requestCameraPermissionsAsync();
-  if (!permission.granted) {
-    Alert.alert("Permissão necessária", "Permita acesso à câmera.");
-    return;
-  }
-
-  // 2. Abre a câmera
-  const result = await ImagePicker.launchCameraAsync({ quality: 1 });
-  if (result.canceled) return;
-
-  // 3. Converte a foto em PDF (usando a função que já existe)
-  const pdfUri = await imagesToPdf(result.assets);
-
-  // 4. Salva e atualiza o estado
-  setOutputUri(pdfUri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `scan-${Date.now()}.pdf`,
-    uri: pdfUri,
-    date: new Date().toISOString(),
-  });
-
-  Alert.alert("PDF criado", "Documento escaneado com sucesso.");
-  return;
-}
-
-if (type === "merge") {
-  if (selectedFiles.length < 2) {
-    Alert.alert("Selecione pelo menos 2 PDFs.");
-    return;
-  }
-
-  const formData = new FormData();
-  for (const file of selectedFiles) {
-    const safeUri = await prepareFileForUpload(file.uri, "pdf");
-    formData.append("files", {
-      uri: safeUri,
-      name: file.name ?? "documento.pdf",
-      type: "application/pdf",
-    } as any);
-  }
-
-  const response = await fetch(`${API_BASE_URL}/pdf/merge`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-  }
-
-  const data = await response.json();
-  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-  const localUri = `${FileSystem.documentDirectory}merged-${Date.now()}.pdf`;
-  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-
-  setOutputUri(downloaded.uri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `unido-${Date.now()}.pdf`,
-    uri: downloaded.uri,
-    date: new Date().toISOString(),
-  });
-
-  Alert.alert("PDFs unidos", "Seus arquivos foram unidos com sucesso.");
-  return;
-}
-
-if (type === "split") {
-  if (!fileUri) {
-    Alert.alert("Selecione um PDF primeiro.");
-    return;
-  }
-
-  if (!pageRange.trim()) {
-    Alert.alert("Digite o intervalo de páginas.", "Ex: 1-3, 5, 8");
-    return;
-  }
-
-  const safeUri = await prepareFileForUpload(fileUri, "pdf");
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: safeUri,
-    name: fileName ?? "documento.pdf",
-    type: "application/pdf",
-  } as any);
-  formData.append("ranges", pageRange.trim());
-
-  const response = await fetch(`${API_BASE_URL}/pdf/split`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-  }
-
-  const data = await response.json();
-  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-  const localUri = `${FileSystem.documentDirectory}split-${Date.now()}.zip`;
-  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-
-  setOutputUri(downloaded.uri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `dividido-${Date.now()}.zip`,
-    uri: downloaded.uri,
-    date: new Date().toISOString(),
-  });
-
-  Alert.alert("PDF dividido", "Seu PDF foi dividido com sucesso. O resultado é um .zip.");
-  return;
-}
-
-if (type === "pdf-to-word") {
-  const isPremium = await checkPremium();
-  if (!isPremium) {
-    await presentPaywall();
-    return;
-  }
-
-  if (!fileUri) {
-    Alert.alert("Selecione um PDF primeiro.");
-    return;
-  }
-
-  const safeUri = await prepareFileForUpload(fileUri, "pdf");
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: safeUri,
-    name: fileName ?? "documento.pdf",
-    type: "application/pdf",
-  } as any);
-
-  const response = await fetch(`${API_BASE_URL}/pdf/pdf-to-word`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-  }
-
-  const data = await response.json();
-  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-  const localUri = `${FileSystem.documentDirectory}word-${Date.now()}.docx`;
-  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-
-  setOutputUri(downloaded.uri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `word-${fileName ?? "arquivo.docx"}`,
-    uri: downloaded.uri,
-    date: new Date().toISOString(),
-  });
-
-  Alert.alert("Convertido!", "Seu PDF foi convertido para Word com sucesso.");
-  return;
-}
-
-if (type === "rotate") {
-  if (!fileUri) {
-    Alert.alert("Selecione um PDF primeiro.");
-    return;
-  }
-
-  const safeUri = await prepareFileForUpload(fileUri, "pdf");
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: safeUri,
-    name: fileName ?? "documento.pdf",
-    type: "application/pdf",
-  } as any);
-  formData.append("rotation", "90");
-
-  const response = await fetch(`${API_BASE_URL}/pdf/rotate`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-  }
-
-  const data = await response.json();
-  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-  const localUri = `${FileSystem.documentDirectory}rotated-${Date.now()}.pdf`;
-  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-
-  setOutputUri(downloaded.uri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `rotacionado-${fileName ?? "arquivo.pdf"}`,
-    uri: downloaded.uri,
-    date: new Date().toISOString(),
-    size: fileSize,
-  });
-
-  Alert.alert("PDF rotacionado", "Seu PDF foi rotacionado com sucesso.");
-  return;
-}
-
-if (type === "remove-pages") {
-  if (!fileUri) {
-    Alert.alert("Selecione um PDF primeiro.");
-    return;
-  }
-
-  if (!pageRange.trim()) {
-    Alert.alert("Digite o intervalo de páginas.", "Ex: 1-3, 5, 8");
-    return;
-  }
-
-  const safeUri = await prepareFileForUpload(fileUri, "pdf");
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: safeUri,
-    name: fileName ?? "documento.pdf",
-    type: "application/pdf",
-  } as any);
-  formData.append("ranges", pageRange.trim());
-
-  const response = await fetch(`${API_BASE_URL}/pdf/remove-pages`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-  }
-
-  const data = await response.json();
-  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
-
-  const localUri = `${FileSystem.documentDirectory}removed-${Date.now()}.pdf`;
-  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
-
-  setOutputUri(downloaded.uri);
-  setProcessed(true);
-
-  await saveToHistory({
-    id: Date.now().toString(),
-    name: `paginas-removidas-${fileName ?? "arquivo.pdf"}`,
-    uri: downloaded.uri,
-    date: new Date().toISOString(),
-    size: fileSize,
-  });
-
-  Alert.alert("Páginas removidas", "As páginas foram removidas com sucesso.");
-  return;
-}
+        const allowed = await checkLimit("compress");
+
+        if (!allowed) {
+          showAppError(getFreeLimitError("compress"), {
+            onGoPremium: async () => {
+              await presentPaywall();
+            },
+          });
+          return;
+        }
+
+        if (!fileUri) {
+          showAppError(getNoFileError("compress"), {
+            onPickFile: pickFile,
+          });
+          return;
+        }
+
+        const pdfUri = fileUri;
+        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
+
+        const formData = new FormData();
+        formData.append("file", {
+          uri: safeUri,
+          name: fileName ?? "documento.pdf",
+          type: "application/pdf",
+        } as any);
+
+        formData.append(
+          "compression_level",
+          presetToLevel[selectedPreset] ?? "recommended"
+        );
+
+        const fileUrl = await postFormDataAndGetFileUrl(
+          `${API_BASE_URL}/pdf/compress`,
+          formData
+        );
+
+        const localUri = `${FileSystem.documentDirectory}compressed-${Date.now()}.pdf`;
+        const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+        setOutputUri(downloaded.uri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `comprimido-${fileName ?? "arquivo.pdf"}`,
+          uri: downloaded.uri,
+          date: new Date().toISOString(),
+          size: fileSize,
+        });
+
+        Alert.alert("PDF comprimido", "Seu PDF foi comprimido com sucesso.");
+        await incrementLimit("compress");
+        return;
+      }
+
+      if (type === "scan") {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+        if (!permission.granted) {
+          showAppError(
+            getFriendlyError(
+              new Error("Permissão da câmera negada"),
+              "scan",
+              "CAMERA_PERMISSION_DENIED"
+            )
+          );
+          return;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({ quality: 1 });
+
+        if (result.canceled) return;
+
+        const pdfUri = await imagesToPdf(result.assets);
+
+        setOutputUri(pdfUri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `scan-${Date.now()}.pdf`,
+          uri: pdfUri,
+          date: new Date().toISOString(),
+        });
+
+        Alert.alert("PDF criado", "Documento escaneado com sucesso.");
+        return;
+      }
+
+      if (type === "merge") {
+        if (selectedFiles.length < 2) {
+          showAppError(
+            getFriendlyError(
+              new Error("Selecione pelo menos 2 PDFs"),
+              "merge",
+              "MIN_FILES_REQUIRED"
+            ),
+            {
+              onPickFile: pickFile,
+            }
+          );
+          return;
+        }
+
+        const formData = new FormData();
+
+        for (const file of selectedFiles) {
+          const safeUri = await prepareFileForUpload(file.uri, "pdf");
+
+          formData.append("files", {
+            uri: safeUri,
+            name: file.name ?? "documento.pdf",
+            type: "application/pdf",
+          } as any);
+        }
+
+        const fileUrl = await postFormDataAndGetFileUrl(
+          `${API_BASE_URL}/pdf/merge`,
+          formData
+        );
+
+        const localUri = `${FileSystem.documentDirectory}merged-${Date.now()}.pdf`;
+        const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+        setOutputUri(downloaded.uri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `unido-${Date.now()}.pdf`,
+          uri: downloaded.uri,
+          date: new Date().toISOString(),
+        });
+
+        Alert.alert("PDFs unidos", "Seus arquivos foram unidos com sucesso.");
+        return;
+      }
+
+      if (type === "split") {
+        if (!fileUri) {
+          showAppError(getNoFileError("split"), {
+            onPickFile: pickFile,
+          });
+          return;
+        }
+
+        if (!pageRange.trim()) {
+          showAppError(
+            getFriendlyError(
+              new Error("Intervalo de páginas vazio"),
+              "split",
+              "INVALID_PAGE_RANGE"
+            )
+          );
+          return;
+        }
+
+        const pdfUri = fileUri;
+        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
+
+        const formData = new FormData();
+        formData.append("file", {
+          uri: safeUri,
+          name: fileName ?? "documento.pdf",
+          type: "application/pdf",
+        } as any);
+        formData.append("ranges", pageRange.trim());
+
+        const fileUrl = await postFormDataAndGetFileUrl(
+          `${API_BASE_URL}/pdf/split`,
+          formData
+        );
+
+        const localUri = `${FileSystem.documentDirectory}split-${Date.now()}.zip`;
+        const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+        setOutputUri(downloaded.uri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `dividido-${Date.now()}.zip`,
+          uri: downloaded.uri,
+          date: new Date().toISOString(),
+        });
+
+        Alert.alert(
+          "PDF dividido",
+          "Seu PDF foi dividido com sucesso. O resultado é um .zip."
+        );
+        return;
+      }
+
+      if (type === "pdf-to-word") {
+        const isPremium = await checkPremium();
+
+        if (!isPremium) {
+          showAppError(getPremiumRequiredError("pdf-to-word"), {
+            onGoPremium: async () => {
+              await presentPaywall();
+            },
+          });
+          return;
+        }
+
+        if (!fileUri) {
+          showAppError(getNoFileError("pdf-to-word"), {
+            onPickFile: pickFile,
+          });
+          return;
+        }
+
+        const pdfUri = fileUri;
+        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
+
+        const formData = new FormData();
+        formData.append("file", {
+          uri: safeUri,
+          name: fileName ?? "documento.pdf",
+          type: "application/pdf",
+        } as any);
+
+        const fileUrl = await postFormDataAndGetFileUrl(
+          `${API_BASE_URL}/pdf/pdf-to-word`,
+          formData
+        );
+
+        const localUri = `${FileSystem.documentDirectory}word-${Date.now()}.docx`;
+        const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+        setOutputUri(downloaded.uri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `word-${fileName ?? "arquivo.docx"}`,
+          uri: downloaded.uri,
+          date: new Date().toISOString(),
+        });
+
+        Alert.alert("Convertido!", "Seu PDF foi convertido para Word com sucesso.");
+        return;
+      }
+
+      if (type === "rotate") {
+        if (!fileUri) {
+          showAppError(getNoFileError("rotate"), {
+            onPickFile: pickFile,
+          });
+          return;
+        }
+
+        const pdfUri = fileUri;
+        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
+
+        const formData = new FormData();
+        formData.append("file", {
+          uri: safeUri,
+          name: fileName ?? "documento.pdf",
+          type: "application/pdf",
+        } as any);
+        formData.append("rotation", "90");
+
+        const fileUrl = await postFormDataAndGetFileUrl(
+          `${API_BASE_URL}/pdf/rotate`,
+          formData
+        );
+
+        const localUri = `${FileSystem.documentDirectory}rotated-${Date.now()}.pdf`;
+        const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+        setOutputUri(downloaded.uri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `rotacionado-${fileName ?? "arquivo.pdf"}`,
+          uri: downloaded.uri,
+          date: new Date().toISOString(),
+          size: fileSize,
+        });
+
+        Alert.alert("PDF rotacionado", "Seu PDF foi rotacionado com sucesso.");
+        return;
+      }
+
+      if (type === "remove-pages") {
+        if (!fileUri) {
+          showAppError(getNoFileError("remove-pages"), {
+            onPickFile: pickFile,
+          });
+          return;
+        }
+
+        if (!pageRange.trim()) {
+          showAppError(
+            getFriendlyError(
+              new Error("Intervalo de páginas vazio"),
+              "remove-pages",
+              "INVALID_PAGE_RANGE"
+            )
+          );
+          return;
+        }
+
+        const pdfUri = fileUri;
+        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
+
+        const formData = new FormData();
+        formData.append("file", {
+          uri: safeUri,
+          name: fileName ?? "documento.pdf",
+          type: "application/pdf",
+        } as any);
+        formData.append("ranges", pageRange.trim());
+
+        const fileUrl = await postFormDataAndGetFileUrl(
+          `${API_BASE_URL}/pdf/remove-pages`,
+          formData
+        );
+
+        const localUri = `${FileSystem.documentDirectory}removed-${Date.now()}.pdf`;
+        const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
+
+        setOutputUri(downloaded.uri);
+        setProcessed(true);
+
+        await saveToHistory({
+          id: Date.now().toString(),
+          name: `paginas-removidas-${fileName ?? "arquivo.pdf"}`,
+          uri: downloaded.uri,
+          date: new Date().toISOString(),
+          size: fileSize,
+        });
+
+        Alert.alert("Páginas removidas", "As páginas foram removidas com sucesso.");
+        return;
+      }
 
       const newUri = await fakeCopyPdf(type);
 
@@ -1245,27 +1341,56 @@ if (type === "remove-pages") {
       Alert.alert("Ferramenta preparada");
     } catch (error) {
       console.error("Erro processFile:", error);
-      Alert.alert("Erro", `Não foi possível processar o arquivo. ${error}`);
+
+      showAppError(formatToolError(error, type as any), {
+        onPickFile: pickFile,
+        onPickImage: pickImageFromGallery,
+        onTryAgain: processFile,
+        onGoPremium: async () => {
+          await presentPaywall();
+        },
+      });
     } finally {
       setLoading(false);
     }
   }
 
   async function shareFile() {
-    const uriToShare = outputUri ?? fileUri;
-    if (!uriToShare) return;
+    try {
+      const uriToShare = outputUri ?? fileUri;
 
-    const available = await Sharing.isAvailableAsync();
-    if (!available) {
-      Alert.alert("Compartilhamento indisponível");
-      return;
+      if (!uriToShare) {
+        showAppError(getNoFileError("share"), {
+          onPickFile: pickFile,
+        });
+        return;
+      }
+
+      const available = await Sharing.isAvailableAsync();
+
+      if (!available) {
+        showAppError(
+          getFriendlyError(
+            new Error("Compartilhamento indisponível"),
+            "share",
+            "SHARE_FAILED"
+          )
+        );
+        return;
+      }
+
+      await Sharing.shareAsync(uriToShare, {
+        mimeType: "application/pdf",
+        dialogTitle: "Compartilhar PDF",
+        UTI: "com.adobe.pdf",
+      });
+    } catch (error) {
+      console.error("Erro shareFile:", error);
+
+      showAppError(formatToolError(error, "share"), {
+        onTryAgain: shareFile,
+      });
     }
-
-    await Sharing.shareAsync(uriToShare, {
-      mimeType: "application/pdf",
-      dialogTitle: "Compartilhar PDF",
-      UTI: "com.adobe.pdf",
-    });
   }
 
   function renderExtraFields() {
@@ -1334,9 +1459,12 @@ if (type === "remove-pages") {
           <SignatureScreen
             onOK={handleSignatureOK}
             onEmpty={() =>
-              Alert.alert(
-                "Assinatura vazia",
-                "Desenhe sua assinatura antes de salvar."
+              showAppError(
+                getFriendlyError(
+                  new Error("Assinatura vazia"),
+                  "sign",
+                  "SIGNATURE_REQUIRED"
+                )
               )
             }
             descriptionText="Assine no espaço abaixo"
@@ -1490,22 +1618,38 @@ if (type === "remove-pages") {
         <View style={styles.steps}>
           <Text style={styles.stepsTitle}>Usar IA</Text>
 
-          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("summary")} disabled={aiLoading}>
+          <TouchableOpacity
+            style={styles.aiBtn}
+            onPress={() => askAI("summary")}
+            disabled={aiLoading}
+          >
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Resumir texto</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("explain")} disabled={aiLoading}>
+          <TouchableOpacity
+            style={styles.aiBtn}
+            onPress={() => askAI("explain")}
+            disabled={aiLoading}
+          >
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Explicar conteúdo</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("important")} disabled={aiLoading}>
+          <TouchableOpacity
+            style={styles.aiBtn}
+            onPress={() => askAI("important")}
+            disabled={aiLoading}
+          >
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Extrair dados importantes</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.aiBtn} onPress={() => askAI("questions")} disabled={aiLoading}>
+          <TouchableOpacity
+            style={styles.aiBtn}
+            onPress={() => askAI("questions")}
+            disabled={aiLoading}
+          >
             <Brain size={18} color="#7C3AED" />
             <Text style={styles.aiBtnText}>Gerar perguntas</Text>
           </TouchableOpacity>

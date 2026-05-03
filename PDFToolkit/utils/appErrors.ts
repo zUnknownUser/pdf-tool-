@@ -595,34 +595,33 @@ export const TOOL_ERROR_MESSAGES: Partial<
   },
 
   rotate: {
-    FEATURE_NOT_READY: {
-      code: "FEATURE_NOT_READY",
-      title: "Rotação ainda não disponível",
-      message:
-        "A ferramenta de rotacionar PDF ainda está em preparação. Ela aparece no app, mas a ação final ainda precisa ser implementada.",
-      actionLabel: "Entendi",
-      action: "none",
-    },
-    SERVER_ERROR: {
-      code: "SERVER_ERROR",
-      title: "Erro ao rotacionar PDF",
-      message:
-        "Não foi possível rotacionar este PDF. O arquivo pode estar protegido ou não permitir edição.",
-      actionLabel: "Desbloquear PDF",
-      action: "unlock_pdf",
-    },
+  SERVER_ERROR: {
+    code: "SERVER_ERROR",
+    title: "Erro ao rotacionar PDF",
+    message:
+      "Não foi possível rotacionar este PDF. O arquivo pode estar protegido ou não permitir edição.",
+    actionLabel: "Desbloquear PDF",
+    action: "unlock_pdf",
   },
+},
 
   "remove-pages": {
-    FEATURE_NOT_READY: {
-      code: "FEATURE_NOT_READY",
-      title: "Remoção de páginas em preparação",
-      message:
-        "A ferramenta de remover páginas ainda precisa ser finalizada antes de funcionar corretamente.",
-      actionLabel: "Entendi",
-      action: "none",
-    },
+  INVALID_PAGE_RANGE: {
+    code: "INVALID_PAGE_RANGE",
+    title: "Intervalo inválido",
+    message: "Digite as páginas que deseja remover. Exemplo: 2, 4-6 ou 1-3, 8.",
+    actionLabel: "Corrigir intervalo",
+    action: "none",
   },
+  SERVER_ERROR: {
+    code: "SERVER_ERROR",
+    title: "Erro ao remover páginas",
+    message:
+      "Não foi possível remover páginas deste PDF. O arquivo pode estar protegido, corrompido ou não permitir edição.",
+    actionLabel: "Escolher outro PDF",
+    action: "pick_file",
+  },
+},
 
   protect: {
     PASSWORD_REQUIRED: {
@@ -794,7 +793,28 @@ function normalizeText(value: unknown): string {
   }
 }
 
+
+function isAppErrorCode(value: unknown): value is AppErrorCode {
+  return typeof value === "string" && value in APP_ERRORS;
+}
+
+function getCodeFromApiError(error: any): AppErrorCode | null {
+  const code = error?.payload?.code;
+
+  if (isAppErrorCode(code)) {
+    return code;
+  }
+
+  return null;
+}
+
 export function detectErrorCode(error: unknown): AppErrorCode {
+  const apiCode = getCodeFromApiError(error);
+
+  if (apiCode) {
+    return apiCode;
+  }
+
   const text = normalizeText(error);
 
   if (!text) return "UNKNOWN_ERROR";
@@ -858,15 +878,15 @@ export function detectErrorCode(error: unknown): AppErrorCode {
     return "PDF_PROTECTED";
   }
 
-  if (
-    text.includes("not a pdf") ||
-    text.includes("não é um pdf") ||
-    text.includes("nao é um pdf") ||
-    text.includes("application/pdf")
-  ) {
-    return "INVALID_PDF";
-  }
-
+ if (
+  text.includes("not a pdf") ||
+  text.includes("não é um pdf") ||
+  text.includes("nao é um pdf") ||
+  text.includes("o arquivo enviado não é um pdf") ||
+  text.includes("este arquivo não parece ser um pdf")
+) {
+  return "INVALID_PDF";
+}
   if (
     text.includes("corrupt") ||
     text.includes("corrompido") ||
@@ -932,6 +952,9 @@ export function detectErrorCode(error: unknown): AppErrorCode {
 
   return "UNKNOWN_ERROR";
 }
+
+
+
 
 export function getFriendlyError(
   error: unknown,

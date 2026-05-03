@@ -69,3 +69,35 @@ export function ensureFileUrl(data: any): string {
 
   return data.fileUrl;
 }
+
+export async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error: any) {
+    throw new ApiRequestError(0, "Erro de conexão com o servidor.", {
+      code: "NETWORK_ERROR",
+      error: "Não foi possível conectar ao servidor.",
+      detail: error?.message ?? String(error),
+    });
+  }
+}
+
+export async function postFormData<T = any>(
+  url: string,
+  formData: FormData
+): Promise<T> {
+  const response = await safeFetch(url, {
+    method: "POST",
+    body: formData,
+  });
+
+  return readJsonOrThrow<T>(response);
+}
+
+export async function postFormDataAndGetFileUrl(
+  url: string,
+  formData: FormData
+): Promise<string> {
+  const data = await postFormData(url, formData);
+  return ensureFileUrl(data);
+}
