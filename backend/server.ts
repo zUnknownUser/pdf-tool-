@@ -156,35 +156,52 @@ async function processPDFWithILovePDF(
 }
 
 
-
 app.post("/pdf/rotate", upload.single("file"), async (req, res) => {
   try {
     const rotation = Number(req.body.rotation ?? 90);
 
-    if (!req.file)
+    if (!req.file) {
       return res.status(400).json({ error: "Arquivo não enviado." });
+    }
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
       return res.status(400).json({ error: "Não é um PDF." });
     }
 
-    const buffer = await processSimpleILovePDFTask(
-      "rotatepdf" as any,
-      [req.file.path],
-      { rotation }
-    );
+    const pdfBytes = fs.readFileSync(req.file.path);
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+
+    const pages = pdfDoc.getPages();
+
+    pages.forEach((page) => {
+      const currentRotation = page.getRotation().angle;
+      page.setRotation(degrees((currentRotation + rotation) % 360));
+    });
 
     const outputName = `rotated-${Date.now()}.pdf`;
-    fs.writeFileSync(path.join(uploadDir, outputName), buffer);
+    const outputPath = path.join(uploadDir, outputName);
+
+    const rotatedPdfBytes = await pdfDoc.save();
+    fs.writeFileSync(outputPath, rotatedPdfBytes);
+
     cleanupFile(req.file.path);
 
-    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+    return res.json({
+      fileUrl: `${BASE_URL}/files/${outputName}`,
+    });
   } catch (error: any) {
+    console.error("Erro ao rotacionar PDF:", error);
+
     cleanupFile(req.file?.path);
-    return res.status(500).json({ error: "Erro ao rotacionar.", detail: error?.message });
+
+    return res.status(500).json({
+      error: "Erro ao rotacionar.",
+      detail: error?.message || String(error),
+    });
   }
 });
+
 
 app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
   try {
