@@ -1,4 +1,3 @@
-// utils/apiError.ts
 
 export type ApiErrorPayload = {
   error?: string;

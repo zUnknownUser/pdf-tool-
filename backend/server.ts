@@ -35,6 +35,45 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+type ApiErrorCode =
+  | "NO_FILE_SELECTED"
+  | "INVALID_FILE"
+  | "INVALID_PDF"
+  | "PDF_PROTECTED"
+  | "PDF_PASSWORD_REQUIRED"
+  | "PDF_WRONG_PASSWORD"
+  | "PDF_CORRUPTED"
+  | "FILE_TOO_LARGE"
+  | "TOO_MANY_FILES"
+  | "MIN_FILES_REQUIRED"
+  | "INVALID_PAGE_RANGE"
+  | "SERVER_ERROR"
+  | "API_UNAVAILABLE"
+  | "UPLOAD_FAILED"
+  | "BACKEND_FILE_URL_MISSING"
+  | "PASSWORD_REQUIRED"
+  | "WATERMARK_TEXT_REQUIRED"
+  | "SIGNATURE_REQUIRED"
+  | "UNKNOWN_ERROR";
+
+function sendApiError(
+  res: any,
+  status: number,
+  code: ApiErrorCode,
+  error: string,
+  detail?: string
+) {
+  return res.status(status).json({
+    code,
+    error,
+    detail: detail ?? "",
+  });
+}
+
+function getErrorDetail(error: any) {
+  return error?.message || String(error) || "Erro desconhecido.";
+}
+
 app.use((req, res, next) => {
   console.log(`[REQ] ${req.method} ${req.url}`);
   next();
@@ -42,7 +81,6 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json({ limit: "80mb" }));
-
 app.use("/files", express.static(uploadDir));
 
 const ai = new GoogleGenAI({
@@ -155,18 +193,30 @@ async function processPDFWithILovePDF(
   return Buffer.from(data);
 }
 
-
 app.post("/pdf/rotate", upload.single("file"), async (req, res) => {
   try {
     const rotation = Number(req.body.rotation ?? 90);
 
     if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "Não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const pdfBytes = fs.readFileSync(req.file.path);
@@ -195,30 +245,52 @@ app.post("/pdf/rotate", upload.single("file"), async (req, res) => {
 
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao rotacionar.",
-      detail: error?.message || String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao rotacionar PDF.",
+      getErrorDetail(error)
+    );
   }
 });
-
 
 app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
   try {
     const ranges = String(req.body.ranges ?? "").trim();
 
     if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
     if (!ranges) {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "Páginas para remover não enviadas." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PAGE_RANGE",
+        "Páginas não informadas.",
+        "Digite as páginas que deseja remover. Exemplo: 2, 4-6 ou 1-3, 8."
+      );
     }
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "Não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const pdfBytes = fs.readFileSync(req.file.path);
@@ -247,9 +319,14 @@ app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
           end > totalPages
         ) {
           cleanupFile(req.file.path);
-          return res.status(400).json({
-            error: `Intervalo inválido: ${part}. O PDF tem ${totalPages} página(s).`,
-          });
+
+          return sendApiError(
+            res,
+            400,
+            "INVALID_PAGE_RANGE",
+            "Intervalo inválido.",
+            `Intervalo inválido: ${part}. O PDF tem ${totalPages} página(s).`
+          );
         }
 
         for (let page = start; page <= end; page++) {
@@ -260,9 +337,14 @@ app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
 
         if (!Number.isInteger(page) || page < 1 || page > totalPages) {
           cleanupFile(req.file.path);
-          return res.status(400).json({
-            error: `Página inválida: ${part}. O PDF tem ${totalPages} página(s).`,
-          });
+
+          return sendApiError(
+            res,
+            400,
+            "INVALID_PAGE_RANGE",
+            "Página inválida.",
+            `Página inválida: ${part}. O PDF tem ${totalPages} página(s).`
+          );
         }
 
         pagesToRemove.add(page - 1);
@@ -271,14 +353,26 @@ app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
 
     if (pagesToRemove.size === 0) {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "Nenhuma página válida informada." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PAGE_RANGE",
+        "Nenhuma página válida informada.",
+        "Confira o intervalo digitado e tente novamente."
+      );
     }
 
     if (pagesToRemove.size >= totalPages) {
       cleanupFile(req.file.path);
-      return res.status(400).json({
-        error: "Você não pode remover todas as páginas do PDF.",
-      });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PAGE_RANGE",
+        "Não é possível remover todas as páginas.",
+        "O PDF precisa manter pelo menos uma página."
+      );
     }
 
     const newPdf = await PDFDocument.create();
@@ -313,10 +407,13 @@ app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
 
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao remover páginas.",
-      detail: error?.message || String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao remover páginas.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -329,7 +426,13 @@ app.post("/ai/pdf-tools", async (req, res) => {
     const { action, text } = req.body;
 
     if (!text) {
-      return res.status(400).json({ error: "Texto não enviado." });
+      return sendApiError(
+        res,
+        400,
+        "INVALID_FILE",
+        "Texto não enviado.",
+        "Envie um texto para a IA processar."
+      );
     }
 
     const instruction = prompts[action] || prompts.summary;
@@ -347,10 +450,14 @@ ${text}
     return res.json({ result: response.text });
   } catch (error: any) {
     console.error("Erro Gemini:", error);
-    return res.status(500).json({
-      error: "Erro ao processar IA com Gemini.",
-      detail: error?.message ?? String(error),
-    });
+
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao processar IA com Gemini.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -360,13 +467,26 @@ app.post("/pdf/protect", upload.single("file"), async (req, res) => {
 
     const password = req.body.password;
 
-    if (!password) {
-      cleanupFile(req.file?.path);
-      return res.status(400).json({ error: "Senha não enviada." });
+    if (!req.file) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+    if (!password) {
+      cleanupFile(req.file.path);
+
+      return sendApiError(
+        res,
+        400,
+        "PASSWORD_REQUIRED",
+        "Senha não enviada.",
+        "Digite uma senha para proteger o PDF."
+      );
     }
 
     console.log("Arquivo:", req.file.originalname);
@@ -376,7 +496,14 @@ app.post("/pdf/protect", upload.single("file"), async (req, res) => {
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const outputName = `protected-${Date.now()}.pdf`;
@@ -402,10 +529,13 @@ app.post("/pdf/protect", upload.single("file"), async (req, res) => {
 
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao proteger PDF.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao proteger PDF.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -415,13 +545,26 @@ app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
 
     const password = req.body.password;
 
-    if (!password) {
-      cleanupFile(req.file?.path);
-      return res.status(400).json({ error: "Senha do PDF não enviada." });
+    if (!req.file) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+    if (!password) {
+      cleanupFile(req.file.path);
+
+      return sendApiError(
+        res,
+        400,
+        "PASSWORD_REQUIRED",
+        "Senha do PDF não enviada.",
+        "Digite a senha atual do PDF."
+      );
     }
 
     console.log("Arquivo:", req.file.originalname);
@@ -431,7 +574,14 @@ app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const outputName = `unlocked-${Date.now()}.pdf`;
@@ -457,10 +607,31 @@ app.post("/pdf/unlock", upload.single("file"), async (req, res) => {
 
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao desbloquear PDF.",
-      detail: error?.message ?? String(error),
-    });
+    const detail = getErrorDetail(error);
+    const text = detail.toLowerCase();
+
+    if (
+      text.includes("password") ||
+      text.includes("senha") ||
+      text.includes("incorrect") ||
+      text.includes("wrong")
+    ) {
+      return sendApiError(
+        res,
+        400,
+        "PDF_WRONG_PASSWORD",
+        "Senha incorreta.",
+        "A senha informada não desbloqueou este PDF."
+      );
+    }
+
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao desbloquear PDF.",
+      detail
+    );
   }
 });
 
@@ -470,13 +641,26 @@ app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
 
     const { text } = req.body;
 
-    if (!text || !String(text).trim()) {
-      cleanupFile(req.file?.path);
-      return res.status(400).json({ error: "Texto da marca não enviado." });
+    if (!req.file) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+    if (!text || !String(text).trim()) {
+      cleanupFile(req.file.path);
+
+      return sendApiError(
+        res,
+        400,
+        "WATERMARK_TEXT_REQUIRED",
+        "Texto da marca d'água não enviado.",
+        "Digite o texto que deseja aplicar como marca d'água."
+      );
     }
 
     console.log("Arquivo:", req.file.originalname);
@@ -486,7 +670,14 @@ app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const pdfBytes = fs.readFileSync(req.file.path);
@@ -516,12 +707,16 @@ app.post("/pdf/watermark", upload.single("file"), async (req, res) => {
     });
   } catch (error: any) {
     console.error("Erro ao aplicar marca d'água:", error?.message ?? error);
+
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao aplicar marca d'água.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao aplicar marca d'água.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -548,12 +743,26 @@ app.post(
 
       if (!pdfFile) {
         cleanupFile(signatureFile?.path);
-        return res.status(400).json({ error: "PDF não enviado." });
+
+        return sendApiError(
+          res,
+          400,
+          "NO_FILE_SELECTED",
+          "PDF não enviado.",
+          "Selecione um PDF antes de assinar."
+        );
       }
 
       if (!signatureFile) {
         cleanupFile(pdfFile.path);
-        return res.status(400).json({ error: "Assinatura não enviada." });
+
+        return sendApiError(
+          res,
+          400,
+          "SIGNATURE_REQUIRED",
+          "Assinatura não enviada.",
+          "Desenhe ou selecione uma assinatura antes de continuar."
+        );
       }
 
       console.log("PDF:", pdfFile.originalname, pdfFile.mimetype, pdfFile.size);
@@ -562,7 +771,14 @@ app.post(
       if (pdfFile.mimetype !== "application/pdf") {
         cleanupFile(pdfFile.path);
         cleanupFile(signatureFile.path);
-        return res.status(400).json({ error: "O arquivo enviado não é PDF." });
+
+        return sendApiError(
+          res,
+          400,
+          "INVALID_PDF",
+          "Arquivo inválido.",
+          "O arquivo enviado não é um PDF válido."
+        );
       }
 
       const pageNumber = Number(req.body.page ?? 1);
@@ -592,9 +808,14 @@ app.post(
       } else {
         cleanupFile(pdfFile.path);
         cleanupFile(signatureFile.path);
-        return res.status(400).json({
-          error: "A assinatura precisa ser PNG ou JPG.",
-        });
+
+        return sendApiError(
+          res,
+          400,
+          "INVALID_FILE",
+          "Assinatura inválida.",
+          "A assinatura precisa ser PNG ou JPG."
+        );
       }
 
       page.drawImage(signatureImage, {
@@ -623,10 +844,13 @@ app.post(
       cleanupFile(pdfFile?.path);
       cleanupFile(signatureFile?.path);
 
-      return res.status(500).json({
-        error: "Erro ao assinar PDF.",
-        detail: error?.message ?? String(error),
-      });
+      return sendApiError(
+        res,
+        500,
+        "SERVER_ERROR",
+        "Erro ao assinar PDF.",
+        getErrorDetail(error)
+      );
     }
   }
 );
@@ -636,12 +860,25 @@ app.post("/pdf/compress", upload.single("file"), async (req, res) => {
     console.log("======= NOVA REQUISIÇÃO /pdf/compress =======");
 
     if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const level = req.body.compression_level ?? "recommended";
@@ -649,7 +886,7 @@ app.post("/pdf/compress", upload.single("file"), async (req, res) => {
     const buffer = await processSimpleILovePDFTask("compress", [req.file.path], {
       compression_level: level,
     });
-    
+
     const outputName = `compressed-${Date.now()}.pdf`;
     const outputPath = path.join(uploadDir, outputName);
 
@@ -661,12 +898,16 @@ app.post("/pdf/compress", upload.single("file"), async (req, res) => {
     });
   } catch (error: any) {
     console.error("Erro ao comprimir PDF:", error?.message ?? error);
+
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao comprimir PDF.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao comprimir PDF.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -675,17 +916,30 @@ app.post("/pdf/pdf-to-word", upload.single("file"), async (req, res) => {
     console.log("======= NOVA REQUISIÇÃO /pdf/pdf-to-word =======");
 
     if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
-   const buffer = await processSimpleILovePDFTask("pdfoffice" as any, [req.file.path], {
-  output_format: "docx",
-});
+    const buffer = await processSimpleILovePDFTask("pdfoffice" as any, [req.file.path], {
+      output_format: "docx",
+    });
 
     const outputName = `word-${Date.now()}.docx`;
     const outputPath = path.join(uploadDir, outputName);
@@ -698,12 +952,16 @@ app.post("/pdf/pdf-to-word", upload.single("file"), async (req, res) => {
     });
   } catch (error: any) {
     console.error("Erro ao converter PDF para Word:", error?.message ?? error);
+
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao converter PDF para Word.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao converter PDF para Word.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -714,13 +972,26 @@ app.post("/pdf/merge", upload.array("files", 10), async (req, res) => {
     console.log("======= NOVA REQUISIÇÃO /pdf/merge =======");
 
     if (!files || files.length < 2) {
-      return res.status(400).json({ error: "Envie pelo menos 2 PDFs." });
+      return sendApiError(
+        res,
+        400,
+        "MIN_FILES_REQUIRED",
+        "Envie pelo menos 2 PDFs.",
+        "Selecione dois ou mais PDFs para juntar."
+      );
     }
 
     for (const file of files) {
       if (file.mimetype !== "application/pdf") {
         files.forEach((f) => cleanupFile(f.path));
-        return res.status(400).json({ error: "Todos os arquivos precisam ser PDF." });
+
+        return sendApiError(
+          res,
+          400,
+          "INVALID_PDF",
+          "Arquivos inválidos.",
+          "Todos os arquivos precisam ser PDF."
+        );
       }
     }
 
@@ -738,12 +1009,16 @@ app.post("/pdf/merge", upload.array("files", 10), async (req, res) => {
     });
   } catch (error: any) {
     console.error("Erro ao juntar PDFs:", error?.message ?? error);
+
     files?.forEach((file) => cleanupFile(file.path));
 
-    return res.status(500).json({
-      error: "Erro ao juntar PDFs.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao juntar PDFs.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -754,17 +1029,37 @@ app.post("/pdf/split", upload.single("file"), async (req, res) => {
     const ranges = req.body.ranges;
 
     if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "Arquivo não enviado.",
+        "Selecione um PDF antes de continuar."
+      );
     }
 
     if (!ranges) {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "Intervalo de páginas não enviado." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PAGE_RANGE",
+        "Intervalo de páginas não enviado.",
+        "Digite o intervalo de páginas. Exemplo: 1-3, 5 ou 2,4,6."
+      );
     }
 
     if (req.file.mimetype !== "application/pdf") {
       cleanupFile(req.file.path);
-      return res.status(400).json({ error: "O arquivo enviado não é um PDF." });
+
+      return sendApiError(
+        res,
+        400,
+        "INVALID_PDF",
+        "Arquivo inválido.",
+        "O arquivo enviado não é um PDF válido."
+      );
     }
 
     const buffer = await processSimpleILovePDFTask("split", [req.file.path], {
@@ -782,12 +1077,16 @@ app.post("/pdf/split", upload.single("file"), async (req, res) => {
     });
   } catch (error: any) {
     console.error("Erro ao dividir PDF:", error?.message ?? error);
+
     cleanupFile(req.file?.path);
 
-    return res.status(500).json({
-      error: "Erro ao dividir PDF.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao dividir PDF.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -797,8 +1096,24 @@ app.post("/pdf/protect-base64", express.json({ limit: "80mb" }), async (req, res
   try {
     const { pdfBase64, password } = req.body;
 
-    if (!pdfBase64 || !password) {
-      return res.status(400).json({ error: "Dados incompletos." });
+    if (!pdfBase64) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "PDF não enviado.",
+        "Envie o PDF antes de continuar."
+      );
+    }
+
+    if (!password) {
+      return sendApiError(
+        res,
+        400,
+        "PASSWORD_REQUIRED",
+        "Senha não enviada.",
+        "Digite uma senha para proteger o PDF."
+      );
     }
 
     const inputName = `input-${Date.now()}.pdf`;
@@ -815,12 +1130,16 @@ app.post("/pdf/protect-base64", express.json({ limit: "80mb" }), async (req, res
     return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
   } catch (error: any) {
     console.error("Erro protect-base64:", error?.message ?? error);
+
     cleanupFile(inputPath);
 
-    return res.status(500).json({
-      error: "Erro ao proteger PDF.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao proteger PDF.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -830,8 +1149,24 @@ app.post("/pdf/unlock-base64", express.json({ limit: "80mb" }), async (req, res)
   try {
     const { pdfBase64, password } = req.body;
 
-    if (!pdfBase64 || !password) {
-      return res.status(400).json({ error: "Dados incompletos." });
+    if (!pdfBase64) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "PDF não enviado.",
+        "Envie o PDF antes de continuar."
+      );
+    }
+
+    if (!password) {
+      return sendApiError(
+        res,
+        400,
+        "PASSWORD_REQUIRED",
+        "Senha não enviada.",
+        "Digite a senha atual do PDF."
+      );
     }
 
     const inputName = `input-${Date.now()}.pdf`;
@@ -848,12 +1183,34 @@ app.post("/pdf/unlock-base64", express.json({ limit: "80mb" }), async (req, res)
     return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
   } catch (error: any) {
     console.error("Erro unlock-base64:", error?.message ?? error);
+
     cleanupFile(inputPath);
 
-    return res.status(500).json({
-      error: "Erro ao desbloquear PDF.",
-      detail: error?.message ?? String(error),
-    });
+    const detail = getErrorDetail(error);
+    const text = detail.toLowerCase();
+
+    if (
+      text.includes("password") ||
+      text.includes("senha") ||
+      text.includes("incorrect") ||
+      text.includes("wrong")
+    ) {
+      return sendApiError(
+        res,
+        400,
+        "PDF_WRONG_PASSWORD",
+        "Senha incorreta.",
+        "A senha informada não desbloqueou este PDF."
+      );
+    }
+
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao desbloquear PDF.",
+      detail
+    );
   }
 });
 
@@ -861,8 +1218,24 @@ app.post("/pdf/watermark-base64", express.json({ limit: "80mb" }), async (req, r
   try {
     const { pdfBase64, text } = req.body;
 
-    if (!pdfBase64 || !text) {
-      return res.status(400).json({ error: "Dados incompletos." });
+    if (!pdfBase64) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "PDF não enviado.",
+        "Envie o PDF antes de continuar."
+      );
+    }
+
+    if (!text || !String(text).trim()) {
+      return sendApiError(
+        res,
+        400,
+        "WATERMARK_TEXT_REQUIRED",
+        "Texto da marca d'água não enviado.",
+        "Digite o texto que deseja aplicar como marca d'água."
+      );
     }
 
     const pdfBytes = Buffer.from(pdfBase64, "base64");
@@ -888,10 +1261,13 @@ app.post("/pdf/watermark-base64", express.json({ limit: "80mb" }), async (req, r
   } catch (error: any) {
     console.error("Erro watermark-base64:", error?.message ?? error);
 
-    return res.status(500).json({
-      error: "Erro ao aplicar marca d'água.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao aplicar marca d'água.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -899,8 +1275,24 @@ app.post("/pdf/sign-base64", express.json({ limit: "80mb" }), async (req, res) =
   try {
     const { pdfBase64, signatureBase64, page, x, y, width, height } = req.body;
 
-    if (!pdfBase64 || !signatureBase64) {
-      return res.status(400).json({ error: "PDF ou assinatura não enviados." });
+    if (!pdfBase64) {
+      return sendApiError(
+        res,
+        400,
+        "NO_FILE_SELECTED",
+        "PDF não enviado.",
+        "Envie o PDF antes de continuar."
+      );
+    }
+
+    if (!signatureBase64) {
+      return sendApiError(
+        res,
+        400,
+        "SIGNATURE_REQUIRED",
+        "Assinatura não enviada.",
+        "Desenhe ou selecione uma assinatura antes de continuar."
+      );
     }
 
     const pdfBytes = Buffer.from(pdfBase64, "base64");
@@ -930,10 +1322,13 @@ app.post("/pdf/sign-base64", express.json({ limit: "80mb" }), async (req, res) =
   } catch (error: any) {
     console.error("Erro ao assinar PDF (base64):", error?.message ?? error);
 
-    return res.status(500).json({
-      error: "Erro ao assinar PDF.",
-      detail: error?.message ?? String(error),
-    });
+    return sendApiError(
+      res,
+      500,
+      "SERVER_ERROR",
+      "Erro ao assinar PDF.",
+      getErrorDetail(error)
+    );
   }
 });
 
@@ -941,16 +1336,22 @@ app.use((err: any, req: any, res: any, next: any) => {
   console.error("[ERRO GLOBAL]", err);
 
   if (err?.code === "LIMIT_FILE_SIZE") {
-    return res.status(413).json({
-      error: "Arquivo muito grande.",
-      detail: "O limite atual foi excedido.",
-    });
+    return sendApiError(
+      res,
+      413,
+      "FILE_TOO_LARGE",
+      "Arquivo muito grande.",
+      "O limite atual foi excedido."
+    );
   }
 
-  return res.status(500).json({
-    error: "Erro interno no servidor.",
-    detail: err?.message ?? String(err),
-  });
+  return sendApiError(
+    res,
+    500,
+    "SERVER_ERROR",
+    "Erro interno no servidor.",
+    getErrorDetail(err)
+  );
 });
 
 const server = app.listen(PORT, () => {
