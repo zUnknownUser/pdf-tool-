@@ -20,6 +20,8 @@ export function configureRevenueCat() {
   }
 }
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 export async function presentPaywall(): Promise<boolean> {
   const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
 
@@ -31,6 +33,7 @@ export async function presentPaywall(): Promise<boolean> {
 
     case PAYWALL_RESULT.PURCHASED:
     case PAYWALL_RESULT.RESTORED:
+      await AsyncStorage.setItem("PDF_IS_PREMIUM", "true"); // 👈 adiciona isso
       return true;
 
     default:

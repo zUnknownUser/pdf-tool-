@@ -53,7 +53,6 @@ export default function PremiumScreen() {
   async function handleSubscribe() {
     try {
       const success = await presentPaywall();
-
       if (success) {
         Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
       }
@@ -122,21 +121,11 @@ export default function PremiumScreen() {
               </View>
             )}
 
-            <Text
-              style={[
-                styles.planLabel,
-                plan.highlight && styles.planLabelActive,
-              ]}
-            >
+            <Text style={[styles.planLabel, plan.highlight && styles.planLabelActive]}>
               {plan.label}
             </Text>
 
-            <Text
-              style={[
-                styles.planTitle,
-                plan.highlight && styles.planTitleActive,
-              ]}
-            >
+            <Text style={[styles.planTitle, plan.highlight && styles.planTitleActive]}>
               {plan.title}
             </Text>
 
@@ -171,38 +160,33 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F7F8",
     paddingHorizontal: 18,
   },
-
   hero: {
-    backgroundColor: "#FFF4D6",
+    backgroundColor: "#FFFFFF",
     borderRadius: 28,
     padding: 22,
     marginTop: 12,
     marginBottom: 24,
   },
-
   heroIcon: {
     width: 58,
     height: 58,
     borderRadius: 20,
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "#FFF4D6",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
-
   heroTitle: {
     fontSize: 26,
     fontWeight: "900",
-    color: "#92400E",
+    color: "#111827",
   },
-
   heroText: {
     marginTop: 8,
     fontSize: 15,
-    color: "#B45309",
+    color: "#6B7280",
     lineHeight: 21,
   },
-
   sectionTitle: {
     fontSize: 14,
     fontWeight: "700",
@@ -210,15 +194,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 4,
   },
-
   featuresCard: {
-    backgroundColor: "#FFF",
+    backgroundColor: "#FFFFFF",
     borderRadius: 22,
     paddingHorizontal: 4,
     paddingVertical: 4,
     marginBottom: 20,
   },
-
   featureRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -226,12 +208,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 12,
   },
-
   featureRowBorder: {
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
   },
-
   featureIcon: {
     width: 34,
     height: 34,
@@ -240,23 +220,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   featureLabel: {
     flex: 1,
     fontSize: 14,
     fontWeight: "700",
     color: "#111827",
   },
-
   plansRow: {
     flexDirection: "row",
     gap: 10,
     marginBottom: 20,
   },
-
   planCard: {
     flex: 1,
-    backgroundColor: "#FFF",
+    backgroundColor: "#FFFFFF",
     borderRadius: 22,
     paddingVertical: 20,
     paddingHorizontal: 14,
@@ -267,12 +244,10 @@ const styles = StyleSheet.create({
     minHeight: 150,
     justifyContent: "center",
   },
-
   planCardActive: {
     borderColor: "#F59E0B",
     backgroundColor: "#FFFBEB",
   },
-
   badge: {
     position: "absolute",
     top: -11,
@@ -281,13 +256,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3,
   },
-
   badgeText: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#FFF",
+    color: "#FFFFFF",
   },
-
   planLabel: {
     fontSize: 12,
     fontWeight: "800",
@@ -296,22 +269,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
-
   planLabelActive: {
     color: "#B45309",
   },
-
   planTitle: {
     fontSize: 18,
     fontWeight: "900",
     color: "#111827",
     textAlign: "center",
   },
-
   planTitleActive: {
     color: "#92400E",
   },
-
   planDescription: {
     marginTop: 8,
     fontSize: 12,
@@ -319,24 +288,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 17,
   },
-
   mainBtn: {
     minHeight: 54,
     borderRadius: 18,
-    backgroundColor: "#F59E0B",
+    backgroundColor: "#007AFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     marginBottom: 12,
   },
-
   mainText: {
     fontSize: 16,
     fontWeight: "900",
-    color: "#FFF",
+    color: "#FFFFFF",
   },
-
   disclaimer: {
     textAlign: "center",
     fontSize: 12,

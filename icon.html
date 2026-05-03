@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tool PDF - Ícone</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #13233d 0%, #08101d 55%, #050b14 100%);
+      color: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 32px;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 980px;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(16px);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0;
+      color: rgba(255,255,255,0.76);
+      line-height: 1.5;
+    }
+
+    .main-canvas {
+      width: 340px;
+      height: 340px;
+      display: block;
+      margin: 10px auto 0;
+      border-radius: 28px;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
+    }
+
+    .controls {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    button {
+      border: none;
+      border-radius: 14px;
+      padding: 14px 18px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(135deg, #ff615f, #ff8b57);
+      box-shadow: 0 10px 30px rgba(255, 97, 95, 0.24);
+    }
+
+    button.secondary {
+      background: rgba(255,255,255,0.08);
+      box-shadow: none;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .previews-title {
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(120px, 1fr));
+      gap: 18px;
+    }
+
+    .preview-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .preview-card h3 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.8);
+    }
+
+    .preview-card canvas {
+      display: block;
+      margin: 0 auto;
+      border-radius: 22%;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.3);
+      background: transparent;
+    }
+
+    .tips {
+      margin-top: 22px;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.78);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .tips strong {
+      color: white;
+    }
+
+    @media (max-width: 880px) {
+      .wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .main-canvas {
+        width: 300px;
+        height: 300px;
+      }
+
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>Tool PDF Icon</h1>
+      <p>
+        Ícone minimalista premium: fundo escuro, documento central e símbolo de energia/inteligência.
+      </p>
+
+      <canvas id="iconCanvas" class="main-canvas" width="1024" height="1024"></canvas>
+
+      <div class="controls">
+        <button onclick="downloadIcon()">Baixar PNG 1024x1024</button>
+        <button class="secondary" onclick="renderAll()">Redesenhar</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 class="previews-title">Prévia em tamanhos menores</h2>
+
+      <div class="preview-grid">
+        <div class="preview-card">
+          <h3>180 x 180</h3>
+          <canvas id="preview180" width="180" height="180"></canvas>
+        </div>
+
+        <div class="preview-card">
+          <h3>96 x 96</h3>
+          <canvas id="preview96" width="96" height="96"></canvas>
+        </div>
+
+        <div class="preview-card">
+          <h3>64 x 64</h3>
+          <canvas id="preview64" width="64" height="64"></canvas>
+        </div>
+      </div>
+
+      <div class="tips">
+        <strong>Dica:</strong> se o ícone continuar bonito em 64x64, então ele está no caminho certo.
+        <br /><br />
+        Esse modelo foi feito para ter <strong>cara de app</strong>, não de “infográfico cheio de funções”.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("iconCanvas");
+    const ctx = canvas.getContext("2d");
+    const SIZE = 1024;
+
+    function roundRectPath(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function fillRoundRect(ctx, x, y, w, h, r, fillStyle) {
+      roundRectPath(ctx, x, y, w, h, r);
+      ctx.fillStyle = fillStyle;
+      ctx.fill();
+    }
+
+    function strokeRoundRect(ctx, x, y, w, h, r, strokeStyle, lineWidth = 1) {
+      roundRectPath(ctx, x, y, w, h, r);
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    }
+
+    function drawSpark(ctx, x, y, size, color) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = color;
+
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.lineTo(size * 0.28, -size * 0.28);
+      ctx.lineTo(size, 0);
+      ctx.lineTo(size * 0.28, size * 0.28);
+      ctx.lineTo(0, size);
+      ctx.lineTo(-size * 0.28, size * 0.28);
+      ctx.lineTo(-size, 0);
+      ctx.lineTo(-size * 0.28, -size * 0.28);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawIcon(ctx, size) {
+      ctx.clearRect(0, 0, size, size);
+
+      // máscara arredondada do ícone
+      ctx.save();
+      roundRectPath(ctx, 0, 0, size, size, size * 0.22);
+      ctx.clip();
+
+      // fundo base
+      const bg = ctx.createLinearGradient(0, 0, size, size);
+      bg.addColorStop(0, "#09111f");
+      bg.addColorStop(0.55, "#13233d");
+      bg.addColorStop(1, "#0b1322");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, size, size);
+
+      // glow coral
+      const glow1 = ctx.createRadialGradient(size * 0.26, size * 0.22, size * 0.03, size * 0.26, size * 0.22, size * 0.34);
+      glow1.addColorStop(0, "rgba(255, 100, 90, 0.34)");
+      glow1.addColorStop(1, "rgba(255, 100, 90, 0)");
+      ctx.fillStyle = glow1;
+      ctx.fillRect(0, 0, size, size);
+
+      // glow azul
+      const glow2 = ctx.createRadialGradient(size * 0.78, size * 0.82, size * 0.03, size * 0.78, size * 0.82, size * 0.30);
+      glow2.addColorStop(0, "rgba(75, 136, 255, 0.28)");
+      glow2.addColorStop(1, "rgba(75, 136, 255, 0)");
+      ctx.fillStyle = glow2;
+      ctx.fillRect(0, 0, size, size);
+
+      // círculos decorativos sutis
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = size * 0.012;
+      ctx.beginPath();
+      ctx.arc(size * 0.80, size * 0.23, size * 0.12, 0.15, Math.PI * 1.76);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(255,255,255,0.04)";
+      ctx.lineWidth = size * 0.01;
+      ctx.beginPath();
+      ctx.arc(size * 0.20, size * 0.83, size * 0.10, 4.1, 1.1);
+      ctx.stroke();
+
+      // sombra elíptica
+      ctx.save();
+      ctx.translate(size * 0.50, size * 0.62);
+      ctx.scale(1.0, 0.38);
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fill();
+      ctx.restore();
+
+      // card traseiro
+      ctx.save();
+      ctx.translate(size * 0.52, size * 0.47);
+      ctx.rotate(-0.08);
+
+      const backGrad = ctx.createLinearGradient(-size * 0.18, -size * 0.22, size * 0.18, size * 0.22);
+      backGrad.addColorStop(0, "rgba(255,255,255,0.15)");
+      backGrad.addColorStop(1, "rgba(255,255,255,0.06)");
+      fillRoundRect(ctx, -size * 0.19, -size * 0.22, size * 0.38, size * 0.46, size * 0.045, backGrad);
+
+      ctx.restore();
+
+      // documento principal
+      ctx.save();
+      ctx.translate(size * 0.50, size * 0.46);
+      ctx.rotate(-0.045);
+
+      // sombra documento
+      ctx.save();
+      ctx.translate(size * 0.010, size * 0.012);
+      fillRoundRect(ctx, -size * 0.18, -size * 0.23, size * 0.36, size * 0.46, size * 0.043, "rgba(0,0,0,0.14)");
+      ctx.restore();
+
+      const docGrad = ctx.createLinearGradient(-size * 0.12, -size * 0.23, size * 0.12, size * 0.23);
+      docGrad.addColorStop(0, "#ffffff");
+      docGrad.addColorStop(1, "#eef4fb");
+      fillRoundRect(ctx, -size * 0.18, -size * 0.23, size * 0.36, size * 0.46, size * 0.043, docGrad);
+      strokeRoundRect(ctx, -size * 0.18, -size * 0.23, size * 0.36, size * 0.46, size * 0.043, "rgba(15,23,42,0.05)", size * 0.002);
+
+      // dobra da folha
+      ctx.beginPath();
+      ctx.moveTo(size * 0.09, -size * 0.23);
+      ctx.lineTo(size * 0.18, -size * 0.14);
+      ctx.lineTo(size * 0.09, -size * 0.14);
+      ctx.closePath();
+      ctx.fillStyle = "#dbe6f4";
+      ctx.fill();
+
+      // header pill
+      const pill = ctx.createLinearGradient(-size * 0.12, -size * 0.19, 0, -size * 0.14);
+      pill.addColorStop(0, "#ff615f");
+      pill.addColorStop(1, "#ff8b57");
+      fillRoundRect(ctx, -size * 0.12, -size * 0.19, size * 0.11, size * 0.042, size * 0.015, pill);
+
+      // linhas superiores sutis
+      fillRoundRect(ctx, -size * 0.12, -size * 0.10, size * 0.14, size * 0.012, size * 0.006, "#d7e0ec");
+      fillRoundRect(ctx, -size * 0.12, -size * 0.075, size * 0.09, size * 0.010, size * 0.005, "#e5edf6");
+
+      // painel central de destaque
+      const panel = ctx.createLinearGradient(-size * 0.10, 0, size * 0.10, size * 0.15);
+      panel.addColorStop(0, "#ff615f");
+      panel.addColorStop(1, "#ff8b57");
+      fillRoundRect(ctx, -size * 0.12, 0, size * 0.24, size * 0.16, size * 0.03, panel);
+
+      // brilho interno
+      const heroGlow = ctx.createRadialGradient(-size * 0.03, size * 0.03, size * 0.01, -size * 0.03, size * 0.03, size * 0.14);
+      heroGlow.addColorStop(0, "rgba(255,255,255,0.32)");
+      heroGlow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = heroGlow;
+      roundRectPath(ctx, -size * 0.12, 0, size * 0.24, size * 0.16, size * 0.03);
+      ctx.fill();
+
+      // símbolo central
+      ctx.save();
+      ctx.translate(0, size * 0.08);
+
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.048, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.040, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.92)";
+      ctx.lineWidth = size * 0.006;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.rotate(-0.65);
+      fillRoundRect(ctx, -size * 0.006, -size * 0.040, size * 0.012, size * 0.080, size * 0.006, "#ffffff");
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.010, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+
+      drawSpark(ctx, size * 0.046, -size * 0.028, size * 0.010, "rgba(255,255,255,0.96)");
+      drawSpark(ctx, -size * 0.040, size * 0.030, size * 0.008, "rgba(255,255,255,0.82)");
+      ctx.restore();
+
+      ctx.restore();
+
+      // sparkles externos discretos
+      drawSpark(ctx, size * 0.18, size * 0.20, size * 0.012, "rgba(255,255,255,0.82)");
+      drawSpark(ctx, size * 0.81, size * 0.76, size * 0.014, "rgba(255,255,255,0.72)");
+
+      ctx.restore();
+    }
+
+    function renderPreview(canvasId) {
+      const previewCanvas = document.getElementById(canvasId);
+      const previewCtx = previewCanvas.getContext("2d");
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewCtx.drawImage(canvas, 0, 0, previewCanvas.width, previewCanvas.height);
+    }
+
+    function renderAll() {
+      drawIcon(ctx, SIZE);
+      renderPreview("preview180");
+      renderPreview("preview96");
+      renderPreview("preview64");
+    }
+
+    function downloadIcon() {
+      const link = document.createElement("a");
+      link.download = "tool-pdf-icon.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useLayoutEffect  } from "react";
+import { HomeHeader } from "../../components/HomeHeader";
 import { useEffect } from "react";
 import {
   ScrollView,
@@ -7,6 +8,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Animated
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -33,6 +35,7 @@ import {
   ChevronRight,
 } from "lucide-react-native";
 import { getHistory, HistoryItem } from "../../utils/history";
+import { useNavigation } from "@react-navigation/native";
 
 const FREE_LIMITS_KEY = "PDF_FREE_LIMITS";
 
@@ -47,6 +50,18 @@ export default function HomeScreen() {
     compress: { date: new Date().toDateString(), used: 0, limit: 3 },
     ocr: { date: new Date().toDateString(), used: 0, limit: 2 },
   });
+
+   const navigation = useNavigation();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={openPrivacyInfo} style={{ marginRight: 4 }}>
+          <ShieldCheck size={22} color="#007AFF" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
     
   useEffect(() => {
@@ -130,25 +145,10 @@ export default function HomeScreen() {
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
-      {/* HERO */}
-      <View style={styles.hero}>
-        <View style={styles.heroTop}>
-          <View style={styles.heroIcon}>
-            <ShieldCheck size={30} color="#007AFF" />
-          </View>
+      <HomeHeader />
 
-          <TouchableOpacity onPress={openPrivacyInfo} style={styles.privacyBtn}>
-            <Text style={styles.privacyText}>Como funciona?</Text>
-          </TouchableOpacity>
-        </View>
 
-        <Text style={styles.heroTitle}>Seus arquivos nunca saem do celular.</Text>
-        <Text style={styles.heroText}>
-          Comprima, converta e organize PDFs com privacidade total.
-        </Text>
-      </View>
-
-      {/* CONTINUAR */}
+      {}
       {hasRecentFiles && (
         <>
           <Text style={styles.sectionTitle}>Continuar</Text>
@@ -288,7 +288,7 @@ export default function HomeScreen() {
         />
 
         <ActionCard
-          title="OCR"
+          title="Ler texto da foto"
           subtitle={`${ocrRemaining} de 2 grátis hoje`}
           badge="IA"
           icon={<ScanText size={22} color="#007AFF" />}

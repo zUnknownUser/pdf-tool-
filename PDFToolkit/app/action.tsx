@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-
+import { presentPaywall } from "@/lib/revenuecat";
 import { styles } from "../styles/action.styles";
+import { tryRequestReview } from "../utils/reviewManager";
 import {
   View,
   Text,
@@ -82,7 +83,7 @@ const titles: Record<string, string> = {
   unlock: "Desbloquear PDF",
   sign: "Assinar PDF",
   watermark: "Marca d'água",
-  ocr: "OCR com IA",
+  ocr: "Ler texto da foto",
   preview: "Visualizar PDF",
   premium: "Premium",
 };
@@ -129,6 +130,11 @@ async function incrementLimit(key: "compress" | "ocr") {
 async function checkLimit(key: "compress" | "ocr"): Promise<boolean> {
   const limits = await getLimits();
   return limits[key].used < limits[key].limit;
+}
+
+async function checkPremium(): Promise<boolean> {
+  const { isPremiumUser } = await import("@/lib/revenuecat");
+  return isPremiumUser();
 }
 
 export default function ActionScreen() {
@@ -345,7 +351,7 @@ export default function ActionScreen() {
     if (!allowed) {
       Alert.alert(
         "Limite diário atingido",
-        "Você usou seus 2 OCRs gratuitos de hoje. Assine o Premium para uso ilimitado."
+        "Você usou suas 2 leituras de texto gratuitas de hoje. Assine o Premium para uso ilimitado."
       );
       return;
     }
@@ -358,7 +364,7 @@ export default function ActionScreen() {
       const text = result?.text?.trim() ?? "";
 
       if (!text) {
-        Alert.alert("OCR concluído", "Nenhum texto foi encontrado na imagem.");
+        Alert.alert("Pronto!", "Nenhum texto foi encontrado na imagem.");
         return;
       }
 
@@ -667,13 +673,24 @@ export default function ActionScreen() {
     const hasGalleryImages = selectedImages.length > 0;
     const hasSelectedFile = !!fileUri || selectedFiles.length > 0;
 
-    if (type === "premium") {
-      Alert.alert(
-        "Premium",
-        "Aqui você pode conectar sua tela de assinatura, RevenueCat ou compra in-app."
-      );
-      return;
+if (type === "premium") {
+  try {
+    setLoading(true);
+
+    const success = await presentPaywall();
+
+    if (success) {
+      Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
     }
+  } catch (error) {
+    console.log("Erro ao abrir paywall:", error);
+    Alert.alert("Erro", "Não foi possível abrir a tela de assinatura.");
+  } finally {
+    setLoading(false);
+  }
+
+  return;
+}
 
     if (type === "ocr") {
       await runOCR();
@@ -696,19 +713,20 @@ export default function ActionScreen() {
     }
 
     if (type === "batch") {
-      const count = selectedFiles.length || 1;
+  const isPremium = await checkPremium();
+  const count = selectedFiles.length || 1;
 
-      if (count > BATCH_FREE_LIMIT) {
-        Alert.alert(
-          "Limite do plano grátis",
-          `Você selecionou ${count} arquivos. O plano grátis permite até ${BATCH_FREE_LIMIT}.`
-        );
-        return;
-      }
+  if (!isPremium && count > BATCH_FREE_LIMIT) {
+    Alert.alert(
+      "Limite do plano grátis",
+      `O plano grátis permite até ${BATCH_FREE_LIMIT} arquivos. Assine o Premium para uso ilimitado.`
+    );
+    return;
+  }
 
-      Alert.alert("Modo lote pronto", `${count} arquivo(s) selecionado(s).`);
-      return;
-    }
+  Alert.alert("Modo lote pronto", `${count} arquivo(s) selecionado(s).`);
+  return;
+}
 
     if (type === "smart-picker") {
       Alert.alert("Ação inteligente", "Sugestão já exibida.");
@@ -877,6 +895,14 @@ export default function ActionScreen() {
       }
 
       if (type === "compress") {
+         const allowed = await checkLimit("compress");
+  if (!allowed) {
+    Alert.alert(
+      "Limite diário atingido",
+      "Você usou suas 3 compressões gratuitas de hoje. Assine o Premium para uso ilimitado."
+    );
+    return;
+  }
   if (!fileUri) {
     Alert.alert("Selecione um PDF primeiro.");
     return;
@@ -921,11 +947,11 @@ export default function ActionScreen() {
   });
 
   Alert.alert("PDF comprimido", "Seu PDF foi comprimido com sucesso.");
+  await incrementLimit("compress");
   return;
 }
 
 if (type === "scan") {
-  // 1. Pede permissão da câmera
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
     Alert.alert("Permissão necessária", "Permita acesso à câmera.");
@@ -1052,6 +1078,12 @@ if (type === "split") {
 }
 
 if (type === "pdf-to-word") {
+  const isPremium = await checkPremium();
+  if (!isPremium) {
+    await presentPaywall();
+    return;
+  }
+
   if (!fileUri) {
     Alert.alert("Selecione um PDF primeiro.");
     return;
@@ -1276,7 +1308,7 @@ if (type === "pdf-to-word") {
 
         {type === "ocr" && (
           <View style={styles.tipBox}>
-            <Text style={styles.tipTitle}>OCR + IA</Text>
+            <Text style={styles.tipTitle}>Como funciona</Text>
             <Text style={styles.tipText}>
               Escolha uma imagem com texto. Primeiro o app extrai o texto, depois
               você pode resumir, explicar ou gerar perguntas com IA.
