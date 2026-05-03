@@ -4,7 +4,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from "react-native";
+
 import {
   Crown,
   Zap,
@@ -17,10 +19,12 @@ import {
   Sparkles,
 } from "lucide-react-native";
 
+import { presentPaywall } from "@/lib/revenuecat";
+
 const features = [
   { icon: Infinity, label: "Conversões ilimitadas por dia" },
   { icon: Layers, label: "Processamento em lote (batch)" },
-  { icon: BanIcon, label: "Sem anúncios" },
+  { icon: BanIcon, label: "Sem limites diários" },
   { icon: ShieldCheck, label: "Proteção e desbloqueio de PDFs" },
   { icon: Zap, label: "OCR com IA ilimitado" },
   { icon: Star, label: "Acesso antecipado a novidades" },
@@ -30,22 +34,35 @@ const plans = [
   {
     id: "monthly",
     label: "Mensal",
-    price: "R$ 9,90",
-    period: "por mês",
+    title: "Plano flexível",
+    description: "Ideal para usar quando precisar.",
     highlight: false,
     badge: null,
   },
   {
     id: "annual",
     label: "Anual",
-    price: "R$ 59,90",
-    period: "por ano",
+    title: "Melhor custo-benefício",
+    description: "Economize assinando por ano.",
     highlight: true,
-    badge: "Economize 50%",
+    badge: "Recomendado",
   },
 ];
 
 export default function PremiumScreen() {
+  async function handleSubscribe() {
+    try {
+      const success = await presentPaywall();
+
+      if (success) {
+        Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
+      }
+    } catch (error) {
+      console.log("Erro ao abrir paywall:", error);
+      Alert.alert("Erro", "Não foi possível abrir a tela de assinatura.");
+    }
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -80,7 +97,9 @@ export default function PremiumScreen() {
             <View style={styles.featureIcon}>
               <Icon size={16} color="#B45309" />
             </View>
+
             <Text style={styles.featureLabel}>{label}</Text>
+
             <Check size={16} color="#34C759" />
           </View>
         ))}
@@ -94,6 +113,7 @@ export default function PremiumScreen() {
           <TouchableOpacity
             key={plan.id}
             activeOpacity={0.85}
+            onPress={handleSubscribe}
             style={[styles.planCard, plan.highlight && styles.planCardActive]}
           >
             {plan.badge && (
@@ -102,27 +122,42 @@ export default function PremiumScreen() {
               </View>
             )}
 
-            <Text style={[styles.planLabel, plan.highlight && styles.planLabelActive]}>
+            <Text
+              style={[
+                styles.planLabel,
+                plan.highlight && styles.planLabelActive,
+              ]}
+            >
               {plan.label}
             </Text>
 
-            <Text style={[styles.planPrice, plan.highlight && styles.planPriceActive]}>
-              {plan.price}
+            <Text
+              style={[
+                styles.planTitle,
+                plan.highlight && styles.planTitleActive,
+              ]}
+            >
+              {plan.title}
             </Text>
 
-            <Text style={styles.planPeriod}>{plan.period}</Text>
+            <Text style={styles.planDescription}>{plan.description}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
       {/* CTA */}
-      <TouchableOpacity style={styles.mainBtn} activeOpacity={0.88}>
+      <TouchableOpacity
+        style={styles.mainBtn}
+        activeOpacity={0.88}
+        onPress={handleSubscribe}
+      >
         <Sparkles size={18} color="#FFF" />
         <Text style={styles.mainText}>Assinar agora</Text>
       </TouchableOpacity>
 
       <Text style={styles.disclaimer}>
-        Cancele quando quiser · Sem multa · Renovação automática
+        Os preços reais aparecem na tela segura da RevenueCat · Cancele quando
+        quiser · Renovação automática
       </Text>
 
       <View style={{ height: 40 }} />
@@ -137,7 +172,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
 
-  // Hero — mesmo padrão do hero da Home
   hero: {
     backgroundColor: "#FFF4D6",
     borderRadius: 28,
@@ -177,7 +211,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Features — mesmo padrão dos cards brancos
   featuresCard: {
     backgroundColor: "#FFF",
     borderRadius: 22,
@@ -215,7 +248,6 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
 
-  // Plans
   plansRow: {
     flexDirection: "row",
     gap: 10,
@@ -232,6 +264,8 @@ const styles = StyleSheet.create({
     position: "relative",
     borderWidth: 2,
     borderColor: "transparent",
+    minHeight: 150,
+    justifyContent: "center",
   },
 
   planCardActive: {
@@ -258,7 +292,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     color: "#6B7280",
-    marginBottom: 6,
+    marginBottom: 8,
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
@@ -267,23 +301,25 @@ const styles = StyleSheet.create({
     color: "#B45309",
   },
 
-  planPrice: {
-    fontSize: 22,
+  planTitle: {
+    fontSize: 18,
     fontWeight: "900",
     color: "#111827",
+    textAlign: "center",
   },
 
-  planPriceActive: {
+  planTitleActive: {
     color: "#92400E",
   },
 
-  planPeriod: {
-    marginTop: 2,
+  planDescription: {
+    marginTop: 8,
     fontSize: 12,
     color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 17,
   },
 
-  // CTA — mesmo estilo do mainBtn do action.styles
   mainBtn: {
     minHeight: 54,
     borderRadius: 18,
