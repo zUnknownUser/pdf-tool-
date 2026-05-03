@@ -23,7 +23,7 @@ import {
   TextInput,
 } from "react-native";
 
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { saveToHistory } from "../utils/history";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import SignatureScreen from "react-native-signature-canvas";
@@ -175,6 +175,13 @@ export default function ActionScreen() {
 
   const API_BASE_URL = "https://pdf-tool-production-4307.up.railway.app";
   const AI_API_URL = `${API_BASE_URL}/ai/pdf-tools`;
+
+  function goToPremium() {
+  router.push({
+    pathname: "/action",
+    params: { type: "premium" },
+  });
+}
 
   const [password, setPassword] = useState("");
   const [watermarkText, setWatermarkText] = useState("");
@@ -384,9 +391,7 @@ export default function ActionScreen() {
 
     if (!allowed) {
       showAppError(getFreeLimitError("ocr"), {
-        onGoPremium: async () => {
-          await presentPaywall();
-        },
+        onGoPremium: goToPremium,
       });
       return;
     }
@@ -766,9 +771,7 @@ export default function ActionScreen() {
 
       if (!isPremium && count > BATCH_FREE_LIMIT) {
         showAppError(getFriendlyError(new Error("Muitos arquivos"), "batch", "TOO_MANY_FILES"), {
-          onGoPremium: async () => {
-            await presentPaywall();
-          },
+          onGoPremium: goToPremium,
         });
         return;
       }
@@ -986,9 +989,7 @@ export default function ActionScreen() {
 
         if (!allowed) {
           showAppError(getFreeLimitError("compress"), {
-            onGoPremium: async () => {
-              await presentPaywall();
-            },
+            onGoPremium: goToPremium,
           });
           return;
         }
@@ -1182,9 +1183,7 @@ export default function ActionScreen() {
 
         if (!isPremium) {
           showAppError(getPremiumRequiredError("pdf-to-word"), {
-            onGoPremium: async () => {
-              await presentPaywall();
-            },
+            onGoPremium: goToPremium,
           });
           return;
         }
@@ -1346,9 +1345,7 @@ export default function ActionScreen() {
         onPickFile: pickFile,
         onPickImage: pickImageFromGallery,
         onTryAgain: processFile,
-        onGoPremium: async () => {
-          await presentPaywall();
-        },
+        onGoPremium: goToPremium,
       });
     } finally {
       setLoading(false);
