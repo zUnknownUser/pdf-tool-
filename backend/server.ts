@@ -155,8 +155,66 @@ async function processPDFWithILovePDF(
   return Buffer.from(data);
 }
 
-app.get("/", (req, res) => {
-  res.send("API OK");
+
+
+app.post("/pdf/rotate", upload.single("file"), async (req, res) => {
+  try {
+    const rotation = Number(req.body.rotation ?? 90);
+
+    if (!req.file)
+      return res.status(400).json({ error: "Arquivo não enviado." });
+
+    if (req.file.mimetype !== "application/pdf") {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "Não é um PDF." });
+    }
+
+    const buffer = await processSimpleILovePDFTask(
+      "rotatepdf" as any,
+      [req.file.path],
+      { rotation }
+    );
+
+    const outputName = `rotated-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join(uploadDir, outputName), buffer);
+    cleanupFile(req.file.path);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (error: any) {
+    cleanupFile(req.file?.path);
+    return res.status(500).json({ error: "Erro ao rotacionar.", detail: error?.message });
+  }
+});
+
+app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
+  try {
+    const ranges = req.body.ranges;
+
+    if (!req.file || !ranges) {
+      cleanupFile(req.file?.path);
+      return res.status(400).json({ error: "Dados incompletos." });
+    }
+
+    if (req.file.mimetype !== "application/pdf") {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "Não é um PDF." });
+    }
+
+    const buffer = await processSimpleILovePDFTask(
+      "removepages" as any,
+      [req.file.path],
+      { ranges }
+    );
+
+    const outputName = `removed-${Date.now()}.pdf`;
+    fs.writeFileSync(path.join(uploadDir, outputName), buffer);
+    cleanupFile(req.file.path);
+
+    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+  } catch (error: any) {
+    cleanupFile(req.file?.path);
+    return res.status(500).json({ error: "Erro ao remover páginas.", detail: error?.message });
+  }
 });
 
 app.get("/health", (req, res) => {

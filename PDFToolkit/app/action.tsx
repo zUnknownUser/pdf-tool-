@@ -1128,6 +1128,105 @@ if (type === "pdf-to-word") {
   return;
 }
 
+if (type === "rotate") {
+  if (!fileUri) {
+    Alert.alert("Selecione um PDF primeiro.");
+    return;
+  }
+
+  const safeUri = await prepareFileForUpload(fileUri, "pdf");
+
+  const formData = new FormData();
+  formData.append("file", {
+    uri: safeUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+  formData.append("rotation", "90");
+
+  const response = await fetch(`${API_BASE_URL}/pdf/rotate`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+
+  const localUri = `${FileSystem.documentDirectory}rotated-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  setOutputUri(downloaded.uri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `rotacionado-${fileName ?? "arquivo.pdf"}`,
+    uri: downloaded.uri,
+    date: new Date().toISOString(),
+    size: fileSize,
+  });
+
+  Alert.alert("PDF rotacionado", "Seu PDF foi rotacionado com sucesso.");
+  return;
+}
+
+if (type === "remove-pages") {
+  if (!fileUri) {
+    Alert.alert("Selecione um PDF primeiro.");
+    return;
+  }
+
+  if (!pageRange.trim()) {
+    Alert.alert("Digite o intervalo de páginas.", "Ex: 1-3, 5, 8");
+    return;
+  }
+
+  const safeUri = await prepareFileForUpload(fileUri, "pdf");
+
+  const formData = new FormData();
+  formData.append("file", {
+    uri: safeUri,
+    name: fileName ?? "documento.pdf",
+    type: "application/pdf",
+  } as any);
+  formData.append("ranges", pageRange.trim());
+
+  const response = await fetch(`${API_BASE_URL}/pdf/remove-pages`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+  if (!data.fileUrl) throw new Error("Backend não retornou fileUrl.");
+
+  const localUri = `${FileSystem.documentDirectory}removed-${Date.now()}.pdf`;
+  const downloaded = await FileSystem.downloadAsync(data.fileUrl, localUri);
+
+  setOutputUri(downloaded.uri);
+  setProcessed(true);
+
+  await saveToHistory({
+    id: Date.now().toString(),
+    name: `paginas-removidas-${fileName ?? "arquivo.pdf"}`,
+    uri: downloaded.uri,
+    date: new Date().toISOString(),
+    size: fileSize,
+  });
+
+  Alert.alert("Páginas removidas", "As páginas foram removidas com sucesso.");
+  return;
+}
+
       const newUri = await fakeCopyPdf(type);
 
       if (newUri) {
