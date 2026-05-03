@@ -205,11 +205,15 @@ app.post("/pdf/rotate", upload.single("file"), async (req, res) => {
 
 app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
   try {
-    const ranges = req.body.ranges;
+    const ranges = String(req.body.ranges ?? "").trim();
 
-    if (!req.file || !ranges) {
-      cleanupFile(req.file?.path);
-      return res.status(400).json({ error: "Dados incompletos." });
+    if (!req.file) {
+      return res.status(400).json({ error: "Arquivo não enviado." });
+    }
+
+    if (!ranges) {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "Páginas para remover não enviadas." });
     }
 
     if (req.file.mimetype !== "application/pdf") {
@@ -217,20 +221,102 @@ app.post("/pdf/remove-pages", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "Não é um PDF." });
     }
 
-    const buffer = await processSimpleILovePDFTask(
-      "removepages" as any,
-      [req.file.path],
-      { ranges }
-    );
+    const pdfBytes = fs.readFileSync(req.file.path);
+    const originalPdf = await PDFDocument.load(pdfBytes);
+
+    const totalPages = originalPdf.getPageCount();
+
+    const pagesToRemove = new Set<number>();
+
+    const parts = ranges
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    for (const part of parts) {
+      if (part.includes("-")) {
+        const [startRaw, endRaw] = part.split("-");
+        const start = Number(startRaw);
+        const end = Number(endRaw);
+
+        if (
+          !Number.isInteger(start) ||
+          !Number.isInteger(end) ||
+          start < 1 ||
+          end < start ||
+          end > totalPages
+        ) {
+          cleanupFile(req.file.path);
+          return res.status(400).json({
+            error: `Intervalo inválido: ${part}. O PDF tem ${totalPages} página(s).`,
+          });
+        }
+
+        for (let page = start; page <= end; page++) {
+          pagesToRemove.add(page - 1);
+        }
+      } else {
+        const page = Number(part);
+
+        if (!Number.isInteger(page) || page < 1 || page > totalPages) {
+          cleanupFile(req.file.path);
+          return res.status(400).json({
+            error: `Página inválida: ${part}. O PDF tem ${totalPages} página(s).`,
+          });
+        }
+
+        pagesToRemove.add(page - 1);
+      }
+    }
+
+    if (pagesToRemove.size === 0) {
+      cleanupFile(req.file.path);
+      return res.status(400).json({ error: "Nenhuma página válida informada." });
+    }
+
+    if (pagesToRemove.size >= totalPages) {
+      cleanupFile(req.file.path);
+      return res.status(400).json({
+        error: "Você não pode remover todas as páginas do PDF.",
+      });
+    }
+
+    const newPdf = await PDFDocument.create();
+
+    const pagesToKeep = [];
+
+    for (let i = 0; i < totalPages; i++) {
+      if (!pagesToRemove.has(i)) {
+        pagesToKeep.push(i);
+      }
+    }
+
+    const copiedPages = await newPdf.copyPages(originalPdf, pagesToKeep);
+
+    copiedPages.forEach((page) => {
+      newPdf.addPage(page);
+    });
 
     const outputName = `removed-${Date.now()}.pdf`;
-    fs.writeFileSync(path.join(uploadDir, outputName), buffer);
+    const outputPath = path.join(uploadDir, outputName);
+
+    const newPdfBytes = await newPdf.save();
+    fs.writeFileSync(outputPath, newPdfBytes);
+
     cleanupFile(req.file.path);
 
-    return res.json({ fileUrl: `${BASE_URL}/files/${outputName}` });
+    return res.json({
+      fileUrl: `${BASE_URL}/files/${outputName}`,
+    });
   } catch (error: any) {
+    console.error("Erro ao remover páginas:", error);
+
     cleanupFile(req.file?.path);
-    return res.status(500).json({ error: "Erro ao remover páginas.", detail: error?.message });
+
+    return res.status(500).json({
+      error: "Erro ao remover páginas.",
+      detail: error?.message || String(error),
+    });
   }
 });
 
