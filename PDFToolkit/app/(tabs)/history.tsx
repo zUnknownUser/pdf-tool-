@@ -11,6 +11,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Sharing from "expo-sharing";
 import { useFocusEffect } from "expo-router";
+import { useTranslation } from "react-i18next";
 import {
   getHistory,
   deleteHistoryItem,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react-native";
 
 type SortMode = "recent" | "name" | "size";
+
 type ExtraMeta = {
   favorite?: boolean;
   pinned?: boolean;
@@ -38,6 +40,8 @@ type ExtraMeta = {
 const META_KEY = "PDF_HISTORY_META";
 
 export default function HistoryScreen() {
+  const { t } = useTranslation();
+
   const [data, setData] = useState<HistoryItem[]>([]);
   const [meta, setMeta] = useState<Record<string, ExtraMeta>>({});
   const [search, setSearch] = useState("");
@@ -65,7 +69,7 @@ export default function HistoryScreen() {
   );
 
   function formatSize(size?: number | null) {
-    if (!size) return "Tamanho desconhecido";
+    if (!size) return t("history_size_unknown");
 
     const mb = size / 1024 / 1024;
 
@@ -105,11 +109,11 @@ export default function HistoryScreen() {
       (startToday.getTime() - startItem.getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    if (diff === 0) return "Hoje";
-    if (diff === 1) return "Ontem";
-    if (diff <= 7) return "Esta semana";
+    if (diff === 0) return t("history_group_today");
+    if (diff === 1) return t("history_group_yesterday");
+    if (diff <= 7) return t("history_group_week");
 
-    return "Mais antigos";
+    return t("history_group_older");
   }
 
   const filteredData = useMemo(() => {
@@ -163,7 +167,7 @@ export default function HistoryScreen() {
     });
 
     return grouped;
-  }, [data, search, sortMode, meta]);
+  }, [data, search, sortMode, meta, t]);
 
   async function preview(item: HistoryItem) {
     if (selectionMode) {
@@ -184,13 +188,16 @@ export default function HistoryScreen() {
     const available = await Sharing.isAvailableAsync();
 
     if (!available) {
-      Alert.alert("Indisponível", "Não foi possível abrir este arquivo.");
+      Alert.alert(
+        t("history_unavailable_title"),
+        t("history_open_unavailable_message")
+      );
       return;
     }
 
     await Sharing.shareAsync(item.uri, {
       mimeType: "application/pdf",
-      dialogTitle: "Abrir PDF",
+      dialogTitle: t("history_open_pdf_title"),
       UTI: "com.adobe.pdf",
     });
   }
@@ -199,13 +206,16 @@ export default function HistoryScreen() {
     const available = await Sharing.isAvailableAsync();
 
     if (!available) {
-      Alert.alert("Indisponível", "Não foi possível compartilhar este arquivo.");
+      Alert.alert(
+        t("history_unavailable_title"),
+        t("history_share_unavailable_message")
+      );
       return;
     }
 
     await Sharing.shareAsync(uri, {
       mimeType: "application/pdf",
-      dialogTitle: "Compartilhar PDF",
+      dialogTitle: t("history_share_pdf_title"),
       UTI: "com.adobe.pdf",
     });
   }
@@ -249,20 +259,20 @@ export default function HistoryScreen() {
   }
 
   function confirmDelete(id: string) {
-    Alert.alert("Remover arquivo", "Deseja excluir este item?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: () => remove(id) },
+    Alert.alert(t("history_remove_title"), t("history_remove_message"), [
+      { text: t("settings_cancel"), style: "cancel" },
+      { text: t("history_delete"), style: "destructive", onPress: () => remove(id) },
     ]);
   }
 
   function confirmDeleteSelected() {
     Alert.alert(
-      "Excluir selecionados",
-      `Deseja excluir ${selectedIds.length} arquivo(s)?`,
+      t("history_delete_selected_title"),
+      t("history_delete_selected_message", { count: selectedIds.length }),
       [
-        { text: "Cancelar", style: "cancel" },
+        { text: t("settings_cancel"), style: "cancel" },
         {
-          text: "Excluir",
+          text: t("history_delete"),
           style: "destructive",
           onPress: removeSelected,
         },
@@ -271,10 +281,10 @@ export default function HistoryScreen() {
   }
 
   function confirmClear() {
-    Alert.alert("Limpar histórico", "Escolha uma opção:", [
-      { text: "Cancelar", style: "cancel" },
+    Alert.alert(t("history_clear_title"), t("history_clear_message"), [
+      { text: t("settings_cancel"), style: "cancel" },
       {
-        text: "Limpar tudo",
+        text: t("history_clear_all"),
         style: "destructive",
         onPress: async () => {
           await clearHistory();
@@ -283,11 +293,11 @@ export default function HistoryScreen() {
         },
       },
       {
-        text: "Remover duplicados",
+        text: t("history_remove_duplicates"),
         onPress: removeDuplicates,
       },
       {
-        text: "Remover antigos (+30 dias)",
+        text: t("history_remove_old"),
         onPress: removeOldItems,
       },
     ]);
@@ -365,9 +375,9 @@ export default function HistoryScreen() {
   }
 
   function getSortLabel() {
-    if (sortMode === "recent") return "Recentes";
-    if (sortMode === "name") return "Nome";
-    return "Tamanho";
+    if (sortMode === "recent") return t("history_sort_recent");
+    if (sortMode === "name") return t("history_sort_name");
+    return t("history_sort_size");
   }
 
   function toggleSelectionMode() {
@@ -379,15 +389,13 @@ export default function HistoryScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Histórico</Text>
-          <Text style={styles.subtitle}>
-            Busque, organize e compartilhe seus PDFs
-          </Text>
+          <Text style={styles.title}>{t("history_title")}</Text>
+          <Text style={styles.subtitle}>{t("history_subtitle")}</Text>
         </View>
 
         {data.length > 0 && (
           <TouchableOpacity onPress={confirmClear}>
-            <Text style={styles.clear}>Limpar</Text>
+            <Text style={styles.clear}>{t("history_clear")}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -400,7 +408,7 @@ export default function HistoryScreen() {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Buscar PDF..."
+              placeholder={t("history_search_placeholder")}
               placeholderTextColor="#9CA3AF"
               style={styles.searchInput}
             />
@@ -423,13 +431,14 @@ export default function HistoryScreen() {
                 size={16}
                 color={selectionMode ? "#FFF" : "#007AFF"}
               />
+
               <Text
                 style={[
                   styles.toolbarText,
                   selectionMode && styles.toolbarTextActive,
                 ]}
               >
-                Selecionar
+                {t("history_select")}
               </Text>
             </TouchableOpacity>
           </View>
@@ -437,7 +446,7 @@ export default function HistoryScreen() {
           {selectionMode && (
             <View style={styles.selectionBar}>
               <Text style={styles.selectionText}>
-                {selectedIds.length} selecionado(s)
+                {t("history_selected_count", { count: selectedIds.length })}
               </Text>
 
               <View style={styles.selectionActions}>
@@ -451,7 +460,7 @@ export default function HistoryScreen() {
                       selectedIds.length === 0 && styles.disabled,
                     ]}
                   >
-                    Compartilhar
+                    {t("history_share")}
                   </Text>
                 </TouchableOpacity>
 
@@ -465,7 +474,7 @@ export default function HistoryScreen() {
                       selectedIds.length === 0 && styles.disabled,
                     ]}
                   >
-                    Excluir
+                    {t("history_delete")}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -484,8 +493,8 @@ export default function HistoryScreen() {
               <FileText size={28} color="#007AFF" />
             </View>
 
-            <Text style={styles.empty}>Nenhum arquivo ainda</Text>
-            <Text style={styles.emptySub}>Seus PDFs aparecerão aqui</Text>
+            <Text style={styles.empty}>{t("history_empty_title")}</Text>
+            <Text style={styles.emptySub}>{t("history_empty_subtitle")}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -497,6 +506,12 @@ export default function HistoryScreen() {
           const itemMeta = meta[pdf.id];
           const selected = selectedIds.includes(pdf.id);
           const duplicated = isDuplicate(pdf);
+
+          const metaParts = [
+            formatSize(pdf.size),
+            duplicated ? t("history_possible_duplicate") : null,
+            itemMeta?.lastOpened ? t("history_already_opened") : null,
+          ].filter(Boolean);
 
           return (
             <TouchableOpacity
@@ -530,9 +545,7 @@ export default function HistoryScreen() {
                 </Text>
 
                 <Text style={styles.metaText}>
-                  {formatSize(pdf.size)}
-                  {duplicated ? " • Possível duplicado" : ""}
-                  {itemMeta?.lastOpened ? " • Já aberto" : ""}
+                  {metaParts.join(" • ")}
                 </Text>
               </View>
 

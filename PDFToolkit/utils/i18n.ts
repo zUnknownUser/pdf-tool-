@@ -24,6 +24,53 @@ const resources = {
       section_premium: "Premium",
       last_file: "Último arquivo usado",
 
+      // ─────────────────────────────────────────
+// HISTORY
+// ─────────────────────────────────────────
+history_title: "Histórico",
+history_subtitle: "Busque, organize e compartilhe seus PDFs",
+history_clear: "Limpar",
+history_search_placeholder: "Buscar PDF...",
+
+history_sort_recent: "Recentes",
+history_sort_name: "Nome",
+history_sort_size: "Tamanho",
+history_select: "Selecionar",
+
+history_selected_count: "{{count}} selecionado(s)",
+history_share: "Compartilhar",
+history_delete: "Excluir",
+
+history_empty_title: "Nenhum arquivo ainda",
+history_empty_subtitle: "Seus PDFs aparecerão aqui",
+
+history_group_today: "Hoje",
+history_group_yesterday: "Ontem",
+history_group_week: "Esta semana",
+history_group_older: "Mais antigos",
+
+history_size_unknown: "Tamanho desconhecido",
+history_possible_duplicate: "Possível duplicado",
+history_already_opened: "Já aberto",
+
+history_unavailable_title: "Indisponível",
+history_open_unavailable_message: "Não foi possível abrir este arquivo.",
+history_share_unavailable_message: "Não foi possível compartilhar este arquivo.",
+history_open_pdf_title: "Abrir PDF",
+history_share_pdf_title: "Compartilhar PDF",
+
+history_remove_title: "Remover arquivo",
+history_remove_message: "Deseja excluir este item?",
+
+history_delete_selected_title: "Excluir selecionados",
+history_delete_selected_message: "Deseja excluir {{count}} arquivo(s)?",
+
+history_clear_title: "Limpar histórico",
+history_clear_message: "Escolha uma opção:",
+history_clear_all: "Limpar tudo",
+history_remove_duplicates: "Remover duplicados",
+history_remove_old: "Remover antigos (+30 dias)",
+
 
       // ─────────────────────────────────────────
 // PREMIUM
@@ -644,6 +691,52 @@ onboarding_mock_done: "Done",
       action_sign_use_saved: "Use",
       action_sign_new: "New signature",
 
+      // ─────────────────────────────────────────
+// HISTORY
+// ─────────────────────────────────────────
+history_title: "Histórico",
+history_subtitle: "Busque, organize e compartilhe seus PDFs",
+history_clear: "Limpar",
+history_search_placeholder: "Buscar PDF...",
+
+history_sort_recent: "Recentes",
+history_sort_name: "Nome",
+history_sort_size: "Tamanho",
+history_select: "Selecionar",
+
+history_selected_count: "{{count}} selecionado(s)",
+history_share: "Compartilhar",
+history_delete: "Excluir",
+
+history_empty_title: "Nenhum arquivo ainda",
+history_empty_subtitle: "Seus PDFs aparecerão aqui",
+
+history_group_today: "Hoje",
+history_group_yesterday: "Ontem",
+history_group_week: "Esta semana",
+history_group_older: "Mais antigos",
+
+history_size_unknown: "Tamanho desconhecido",
+history_possible_duplicate: "Possível duplicado",
+history_already_opened: "Já aberto",
+
+history_unavailable_title: "Indisponível",
+history_open_unavailable_message: "Não foi possível abrir este arquivo.",
+history_share_unavailable_message: "Não foi possível compartilhar este arquivo.",
+history_open_pdf_title: "Abrir PDF",
+history_share_pdf_title: "Compartilhar PDF",
+
+history_remove_title: "Remover arquivo",
+history_remove_message: "Deseja excluir este item?",
+
+history_delete_selected_title: "Excluir selecionados",
+history_delete_selected_message: "Deseja excluir {{count}} arquivo(s)?",
+
+history_clear_title: "Limpar histórico",
+history_clear_message: "Escolha uma opção:",
+history_clear_all: "Limpar tudo",
+history_remove_duplicates: "Remover duplicados",
+history_remove_old: "Remover antigos (+30 dias)",
       // ACTION — premium box
       action_premium_feature_title: "Unlimited batch",
       action_premium_feature_text:
