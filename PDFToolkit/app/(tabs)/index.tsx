@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useState, useLayoutEffect  } from "react";
+import { useCallback, useMemo, useState, useLayoutEffect, useEffect } from "react";
 import { HomeHeader } from "../../components/HomeHeader";
-import { useEffect } from "react";
 import {
   ScrollView,
   View,
@@ -8,10 +7,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  Animated
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTranslation } from "react-i18next";
 import {
   FileDown,
   Images,
@@ -22,7 +21,6 @@ import {
   ShieldCheck,
   Clock,
   RotateCw,
-  ListOrdered,
   Trash2,
   Camera,
   Lock,
@@ -45,25 +43,37 @@ type FreeLimits = {
 };
 
 export default function HomeScreen() {
+  const { t } = useTranslation();
+
   const [recentFiles, setRecentFiles] = useState<HistoryItem[]>([]);
   const [limits, setLimits] = useState<FreeLimits>({
     compress: { date: new Date().toDateString(), used: 0, limit: 3 },
     ocr: { date: new Date().toDateString(), used: 0, limit: 2 },
   });
 
-   const navigation = useNavigation();
+  const navigation = useNavigation();
+
+  const openPrivacyInfo = useCallback(() => {
+    Alert.alert(
+      t("privacy_alert_title"),
+      t("privacy_alert_message")
+    );
+  }, [t]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={openPrivacyInfo} style={{ marginRight: 4 }}>
+        <TouchableOpacity
+          onPress={openPrivacyInfo}
+          style={{ marginRight: 4 }}
+          activeOpacity={0.75}
+        >
           <ShieldCheck size={22} color="#007AFF" />
         </TouchableOpacity>
       ),
     });
-  }, [navigation]);
+  }, [navigation, openPrivacyInfo]);
 
-    
   useEffect(() => {
     async function checkOnboarding() {
       const seen = await AsyncStorage.getItem("PDF_ONBOARDING_SEEN");
@@ -95,12 +105,24 @@ export default function HomeScreen() {
 
       if (needsReset) {
         const resetLimits: FreeLimits = {
-          compress: { date: today, used: parsed.compress?.date === today ? parsed.compress.used : 0, limit: 3 },
-          ocr: { date: today, used: parsed.ocr?.date === today ? parsed.ocr.used : 0, limit: 2 },
+          compress: {
+            date: today,
+            used: parsed.compress?.date === today ? parsed.compress.used : 0,
+            limit: 3,
+          },
+          ocr: {
+            date: today,
+            used: parsed.ocr?.date === today ? parsed.ocr.used : 0,
+            limit: 2,
+          },
         };
 
         setLimits(resetLimits);
-        await AsyncStorage.setItem(FREE_LIMITS_KEY, JSON.stringify(resetLimits));
+
+        await AsyncStorage.setItem(
+          FREE_LIMITS_KEY,
+          JSON.stringify(resetLimits)
+        );
       } else {
         setLimits(parsed);
       }
@@ -123,13 +145,6 @@ export default function HomeScreen() {
     [limits]
   );
 
-  function openPrivacyInfo() {
-    Alert.alert(
-      "Privacidade",
-      "A ideia do app é processar seus arquivos localmente no celular sempre que possível. Assim, seus PDFs não precisam sair do aparelho para tarefas como comprimir, juntar, dividir ou converter."
-    );
-  }
-
   function openRecentFile(item: HistoryItem) {
     router.push({
       pathname: "/action",
@@ -147,11 +162,9 @@ export default function HomeScreen() {
     >
       <HomeHeader />
 
-
-      {}
       {hasRecentFiles && (
         <>
-          <Text style={styles.sectionTitle}>Continuar</Text>
+          <Text style={styles.sectionTitle}>{t("section_continue")}</Text>
 
           <TouchableOpacity
             activeOpacity={0.85}
@@ -166,7 +179,10 @@ export default function HomeScreen() {
               <Text style={styles.continueTitle} numberOfLines={1}>
                 {recentFiles[0].name}
               </Text>
-              <Text style={styles.continueSubtitle}>Último arquivo usado</Text>
+
+              <Text style={styles.continueSubtitle}>
+                {t("last_file")}
+              </Text>
             </View>
 
             <ChevronRight size={20} color="#9CA3AF" />
@@ -174,132 +190,147 @@ export default function HomeScreen() {
         </>
       )}
 
-      {/* GUIADO POR OBJETIVO */}
-      <Text style={styles.sectionTitle}>O que você quer fazer?</Text>
+      <Text style={styles.sectionTitle}>{t("section_goal")}</Text>
 
       <View style={styles.goalGrid}>
-        <GoalButton title="Reduzir tamanho" onPress={() => openAction("compress")} />
-        <GoalButton title="Juntar arquivos" onPress={() => openAction("merge")} />
-        <GoalButton title="Converter imagens" onPress={() => openAction("image-to-pdf")} />
-        <GoalButton title="Separar páginas" onPress={() => openAction("split")} />
+        <GoalButton
+          title={t("goal_compress")}
+          onPress={() => openAction("compress")}
+        />
+
+        <GoalButton
+          title={t("goal_merge")}
+          onPress={() => openAction("merge")}
+        />
+
+        <GoalButton
+          title={t("goal_image")}
+          onPress={() => openAction("image-to-pdf")}
+        />
+
+        <GoalButton
+          title={t("goal_split")}
+          onPress={() => openAction("split")}
+        />
       </View>
 
-      {/* FERRAMENTAS */}
-      <Text style={styles.sectionTitle}>Ferramentas</Text>
+      <Text style={styles.sectionTitle}>{t("section_tools")}</Text>
 
       <View style={styles.toolsGrid}>
         <ActionCard
-          title="Comprimir PDF"
-          subtitle={`${compressRemaining} de 3 grátis hoje`}
-          badge="Grátis"
+          title={t("tool_compress")}
+          subtitle={t("tool_compress_remaining", {
+            remaining: compressRemaining,
+          })}
+          badge={t("badge_free")}
           icon={<FileDown size={22} color="#007AFF" />}
           onPress={() => openAction("compress")}
         />
 
         <ActionCard
-          title="Imagem para PDF"
-          subtitle="Fotos em PDF."
+          title={t("tool_image_pdf")}
+          subtitle={t("tool_image_pdf_sub")}
           icon={<Images size={22} color="#007AFF" />}
           onPress={() => openAction("image-to-pdf")}
         />
 
-       <ActionCard
-     title="PDF para Word"
-     subtitle="Converta documentos."
-      icon={<FileText size={22} color="#007AFF" />}
-      onPress={() => openAction("pdf-to-word")}
-       /> 
+        <ActionCard
+          title={t("tool_pdf_word")}
+          subtitle={t("tool_pdf_word_sub")}
+          icon={<FileText size={22} color="#007AFF" />}
+          onPress={() => openAction("pdf-to-word")}
+        />
 
         <ActionCard
-          title="Juntar PDFs"
-          subtitle="Una arquivos."
+          title={t("tool_merge")}
+          subtitle={t("tool_merge_sub")}
           icon={<Combine size={22} color="#007AFF" />}
           onPress={() => openAction("merge")}
         />
 
         <ActionCard
-          title="Dividir PDF"
-          subtitle="Separe páginas."
+          title={t("tool_split")}
+          subtitle={t("tool_split_sub")}
           icon={<Scissors size={22} color="#007AFF" />}
           onPress={() => openAction("split")}
         />
 
         <ActionCard
-          title="Modo lote"
-          subtitle="Vários arquivos."
-          badge="Novo"
+          title={t("tool_batch")}
+          subtitle={t("tool_batch_sub")}
+          badge={t("badge_new")}
           icon={<Files size={22} color="#007AFF" />}
           onPress={() => openAction("batch")}
         />
       </View>
 
-      {/* MAIS FERRAMENTAS */}
-      <Text style={styles.sectionTitle}>Mais ferramentas</Text>
+      <Text style={styles.sectionTitle}>{t("section_more_tools")}</Text>
 
       <View style={styles.toolsGrid}>
         <ActionCard
-          title="Rotacionar"
-          subtitle="Gire páginas."
+          title={t("tool_rotate")}
+          subtitle={t("tool_rotate_sub")}
           icon={<RotateCw size={22} color="#007AFF" />}
           onPress={() => openAction("rotate")}
         />
 
         <ActionCard
-       title="Escanear PDF"
-       subtitle="Use a câmera."
-       badge="Novo"
-  icon={<Camera size={22} color="#007AFF" />}
-  onPress={() => openAction("scan")}
-     />
+          title={t("tool_scan")}
+          subtitle={t("tool_scan_sub")}
+          badge={t("badge_new")}
+          icon={<Camera size={22} color="#007AFF" />}
+          onPress={() => openAction("scan")}
+        />
 
         <ActionCard
-          title="Remover páginas"
-          subtitle="Apague páginas."
+          title={t("tool_remove")}
+          subtitle={t("tool_remove_sub")}
           icon={<Trash2 size={22} color="#007AFF" />}
           onPress={() => openAction("remove-pages")}
         />
 
         <ActionCard
-          title="Proteger PDF"
-          subtitle="Senha no arquivo."
+          title={t("tool_protect")}
+          subtitle={t("tool_protect_sub")}
           icon={<Lock size={22} color="#007AFF" />}
           onPress={() => openAction("protect")}
         />
 
         <ActionCard
-          title="Desbloquear"
-          subtitle="Remover senha."
+          title={t("tool_unlock")}
+          subtitle={t("tool_unlock_sub")}
           icon={<Unlock size={22} color="#007AFF" />}
           onPress={() => openAction("unlock")}
         />
 
         <ActionCard
-          title="Assinar PDF"
-          subtitle="Adicionar assinatura."
+          title={t("tool_sign")}
+          subtitle={t("tool_sign_sub")}
           icon={<PenLine size={22} color="#007AFF" />}
           onPress={() => openAction("sign")}
         />
 
         <ActionCard
-          title="Marca d'água"
-          subtitle="Texto ou imagem."
+          title={t("tool_watermark")}
+          subtitle={t("tool_watermark_sub")}
           icon={<Droplets size={22} color="#007AFF" />}
           onPress={() => openAction("watermark")}
         />
 
         <ActionCard
-          title="Ler texto da foto"
-          subtitle={`${ocrRemaining} de 2 grátis hoje`}
-          badge="IA"
+          title={t("tool_ocr")}
+          subtitle={t("tool_ocr_remaining", {
+            remaining: ocrRemaining,
+          })}
+          badge={t("badge_ai")}
           icon={<ScanText size={22} color="#007AFF" />}
           onPress={() => openAction("ocr")}
         />
       </View>
 
-      {/* HISTÓRICO RECENTE */}
       {hasRecentFiles && (
         <>
-          <Text style={styles.sectionTitle}>Recentes</Text>
+          <Text style={styles.sectionTitle}>{t("section_recent")}</Text>
 
           <View style={styles.recentBox}>
             {recentFiles.map((item) => (
@@ -317,6 +348,7 @@ export default function HomeScreen() {
                   <Text style={styles.recentName} numberOfLines={1}>
                     {item.name}
                   </Text>
+
                   <Text style={styles.recentDate}>
                     {new Date(item.date).toLocaleDateString()}
                   </Text>
@@ -329,13 +361,12 @@ export default function HomeScreen() {
         </>
       )}
 
-      {/* PREMIUM */}
-      <Text style={styles.sectionTitle}>Premium</Text>
+      <Text style={styles.sectionTitle}>{t("section_premium")}</Text>
 
       <ActionCard
-        title="Desbloquear tudo"
-        subtitle="Sem limites diários, batch e sem anúncios."
-        badge="Premium"
+        title={t("tool_premium")}
+        subtitle={t("tool_premium_sub")}
+        badge={t("badge_premium")}
         premium
         icon={<Crown size={24} color="#B45309" />}
         onPress={() => openAction("premium")}
@@ -348,15 +379,39 @@ export default function HomeScreen() {
 
 /* ================= COMPONENTES ================= */
 
-function GoalButton({ title, onPress }: any) {
+function GoalButton({
+  title,
+  onPress,
+}: {
+  title: string;
+  onPress: () => void;
+}) {
   return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.goalButton} onPress={onPress}>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.goalButton}
+      onPress={onPress}
+    >
       <Text style={styles.goalText}>{title}</Text>
     </TouchableOpacity>
   );
 }
 
-function ActionCard({ title, subtitle, icon, badge, premium, onPress }: any) {
+function ActionCard({
+  title,
+  subtitle,
+  icon,
+  badge,
+  premium,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  badge?: string;
+  premium?: boolean;
+  onPress: () => void;
+}) {
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -373,7 +428,12 @@ function ActionCard({ title, subtitle, icon, badge, premium, onPress }: any) {
 
           {badge && (
             <View style={[styles.badge, premium && styles.premiumBadge]}>
-              <Text style={[styles.badgeText, premium && styles.premiumBadgeText]}>
+              <Text
+                style={[
+                  styles.badgeText,
+                  premium && styles.premiumBadgeText,
+                ]}
+              >
                 {badge}
               </Text>
             </View>
@@ -393,48 +453,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7F7F8",
     paddingHorizontal: 18,
-  },
-  hero: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 30,
-    padding: 22,
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  heroTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  heroIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    backgroundColor: "#E8F2FF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  privacyBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 999,
-  },
-  privacyText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#007AFF",
-  },
-  heroTitle: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  heroText: {
-    marginTop: 8,
-    fontSize: 15,
-    color: "#6B7280",
   },
   sectionTitle: {
     fontSize: 14,

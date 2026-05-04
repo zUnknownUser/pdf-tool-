@@ -1,7 +1,10 @@
 import { Tabs } from "expo-router";
 import { Home, Clock, Crown } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 
 export default function TabLayout() {
+  const { t } = useTranslation();
+
   return (
     <Tabs
       screenOptions={{
@@ -19,7 +22,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Ferramentas",
+          title: t("section_tools"),
           tabBarIcon: ({ color, size }) => (
             <Home size={size} color={color} />
           ),
@@ -29,7 +32,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="history"
         options={{
-          title: "Histórico",
+          title: t("history_title"),
           tabBarIcon: ({ color, size }) => (
             <Clock size={size} color={color} />
           ),
@@ -39,7 +42,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="premium"
         options={{
-          title: "Premium",
+          title: t("section_premium"),
           tabBarIcon: ({ color, size }) => (
             <Crown size={size} color={color} />
           ),
