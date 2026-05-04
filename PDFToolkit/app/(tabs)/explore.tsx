@@ -22,9 +22,13 @@ import {
   Sun,
   Globe,
 } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { isPremiumUser } from "@/lib/revenuecat";
+import i18n, { changeLanguage } from "@/utils/i18n";
 
 const FREE_LIMITS_KEY = "PDF_FREE_LIMITS";
+
+type AppLanguage = "pt-BR" | "en";
 
 type FreeLimits = {
   compress: { date: string; used: number; limit: number };
@@ -32,7 +36,14 @@ type FreeLimits = {
 };
 
 export default function SettingsScreen() {
+  const { t } = useTranslation();
+
+  const [currentLanguage, setCurrentLanguage] = useState<AppLanguage>(
+    i18n.language === "pt-BR" ? "pt-BR" : "en"
+  );
+
   const [isPremium, setIsPremium] = useState(false);
+
   const [limits, setLimits] = useState<FreeLimits>({
     compress: { date: new Date().toDateString(), used: 0, limit: 3 },
     ocr: { date: new Date().toDateString(), used: 0, limit: 2 },
@@ -45,13 +56,15 @@ export default function SettingsScreen() {
   );
 
   async function loadData() {
-   const premium = await isPremiumUser();
-   setIsPremium(premium); 
+    const premium = await isPremiumUser();
+    setIsPremium(premium);
 
     const raw = await AsyncStorage.getItem(FREE_LIMITS_KEY);
+
     if (raw) {
       const parsed: FreeLimits = JSON.parse(raw);
       const today = new Date().toDateString();
+
       setLimits({
         compress:
           parsed.compress?.date === today
@@ -65,18 +78,61 @@ export default function SettingsScreen() {
     }
   }
 
+  function getLanguageLabel() {
+    if (currentLanguage === "pt-BR") {
+      return t("settings_language_pt");
+    }
+
+    return t("settings_language_en");
+  }
+
+  async function handleChangeLanguage(lang: AppLanguage) {
+    await changeLanguage(lang);
+    setCurrentLanguage(lang);
+
+    Alert.alert(
+      t("settings_language_changed_title"),
+      t("settings_language_changed_message")
+    );
+  }
+
+  function openLanguageSelector() {
+    Alert.alert(
+      t("settings_language_select_title"),
+      t("settings_language_select_message"),
+      [
+        {
+          text: t("settings_language_pt"),
+          onPress: () => handleChangeLanguage("pt-BR"),
+        },
+        {
+          text: t("settings_language_en"),
+          onPress: () => handleChangeLanguage("en"),
+        },
+        {
+          text: t("settings_cancel"),
+          style: "cancel",
+        },
+      ]
+    );
+  }
+
   async function clearHistory() {
     Alert.alert(
-      "Limpar histórico",
-      "Tem certeza? O histórico de arquivos será apagado.",
+      t("settings_clear_history_title"),
+      t("settings_clear_history_message"),
       [
-        { text: "Cancelar", style: "cancel" },
+        { text: t("settings_cancel"), style: "cancel" },
         {
-          text: "Limpar",
+          text: t("settings_clear_history_confirm"),
           style: "destructive",
           onPress: async () => {
             await AsyncStorage.removeItem("PDF_HISTORY");
-            Alert.alert("Pronto", "Histórico apagado.");
+
+            Alert.alert(
+              t("settings_clear_history_success_title"),
+              t("settings_clear_history_success_message")
+            );
           },
         },
       ]
@@ -85,15 +141,18 @@ export default function SettingsScreen() {
 
   async function clearCache() {
     Alert.alert(
-      "Limpar cache",
-      "Os arquivos temporários serão removidos.",
+      t("settings_clear_cache_title"),
+      t("settings_clear_cache_message"),
       [
-        { text: "Cancelar", style: "cancel" },
+        { text: t("settings_cancel"), style: "cancel" },
         {
-          text: "Limpar",
+          text: t("settings_clear_cache_confirm"),
           style: "destructive",
           onPress: async () => {
-            Alert.alert("Pronto", "Cache limpo com sucesso.");
+            Alert.alert(
+              t("settings_clear_cache_success_title"),
+              t("settings_clear_cache_success_message")
+            );
           },
         },
       ]
@@ -115,10 +174,15 @@ export default function SettingsScreen() {
 
           <View style={styles.planInfo}>
             <Text style={styles.planTitle}>
-              {isPremium ? "Plano Premium" : "Plano Grátis"}
+              {isPremium
+                ? t("settings_plan_premium")
+                : t("settings_plan_free")}
             </Text>
+
             <Text style={styles.planSubtitle}>
-              {isPremium ? "Uso ilimitado ativo ✓" : "Alguns recursos são limitados"}
+              {isPremium
+                ? t("settings_plan_premium_sub")
+                : t("settings_plan_free_sub")}
             </Text>
           </View>
         </View>
@@ -127,10 +191,18 @@ export default function SettingsScreen() {
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.upgradeBtn}
-            onPress={() => router.push({ pathname: "/action", params: { type: "premium" } })}
+            onPress={() =>
+              router.push({
+                pathname: "/action",
+                params: { type: "premium" },
+              })
+            }
           >
             <Zap size={16} color="#FFF" />
-            <Text style={styles.upgradeBtnText}>Ver planos</Text>
+
+            <Text style={styles.upgradeBtnText}>
+              {t("settings_upgrade")}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -138,93 +210,123 @@ export default function SettingsScreen() {
       {/* USO DO DIA */}
       {!isPremium && (
         <>
-          <Text style={styles.sectionTitle}>Uso de hoje</Text>
+          <Text style={styles.sectionTitle}>
+            {t("settings_usage_today")}
+          </Text>
+
           <View style={styles.section}>
             <UsageRow
-              label="Compressões"
+              label={t("settings_compressions")}
               used={limits.compress.used}
               limit={limits.compress.limit}
+              usedTodayText={t("settings_used_today", {
+                used: limits.compress.used,
+                limit: limits.compress.limit,
+              })}
             />
+
             <View style={styles.divider} />
+
             <UsageRow
-              label="Leitura de texto"
+              label={t("settings_ocr")}
               used={limits.ocr.used}
               limit={limits.ocr.limit}
+              usedTodayText={t("settings_used_today", {
+                used: limits.ocr.used,
+                limit: limits.ocr.limit,
+              })}
             />
           </View>
         </>
       )}
 
       {/* PREFERÊNCIAS */}
-      <Text style={styles.sectionTitle}>Preferências</Text>
+      <Text style={styles.sectionTitle}>{t("settings_preferences")}</Text>
+
       <View style={styles.section}>
         <SettingsRow
           icon={<Sun size={18} color="#F59E0B" />}
           iconBg="#FFF4D6"
-          label="Tema"
-          value="Em breve"
-          onPress={() => Alert.alert("Em breve", "Suporte a tema claro/escuro será adicionado em breve.")}
+          label={t("settings_theme")}
+          value={t("settings_coming_soon")}
+          onPress={() =>
+            Alert.alert(
+              t("settings_theme_alert_title"),
+              t("settings_theme_alert_message")
+            )
+          }
           noChevron
         />
+
         <View style={styles.divider} />
+
         <SettingsRow
           icon={<Globe size={18} color="#007AFF" />}
           iconBg="#E8F2FF"
-          label="Idioma"
-          value="Em breve"
-          onPress={() => Alert.alert("Em breve", "Suporte a múltiplos idiomas será adicionado em breve.")}
-          noChevron
+          label={t("settings_language")}
+          value={getLanguageLabel()}
+          onPress={openLanguageSelector}
         />
       </View>
 
       {/* DADOS */}
-      <Text style={styles.sectionTitle}>Dados</Text>
+      <Text style={styles.sectionTitle}>{t("settings_data")}</Text>
+
       <View style={styles.section}>
         <SettingsRow
           icon={<Trash2 size={18} color="#EF4444" />}
           iconBg="#FEF2F2"
-          label="Limpar histórico"
+          label={t("settings_clear_history")}
           onPress={clearHistory}
           destructive
         />
+
         <View style={styles.divider} />
+
         <SettingsRow
           icon={<FileText size={18} color="#6B7280" />}
           iconBg="#F3F4F6"
-          label="Limpar cache"
+          label={t("settings_clear_cache")}
           onPress={clearCache}
           destructive
         />
       </View>
 
       {/* SOBRE */}
-      <Text style={styles.sectionTitle}>Sobre o app</Text>
+      <Text style={styles.sectionTitle}>{t("settings_about")}</Text>
+
       <View style={styles.section}>
         <SettingsRow
           icon={<Star size={18} color="#F59E0B" />}
           iconBg="#FFF4D6"
-          label="Avaliar o app"
+          label={t("settings_rate")}
           onPress={() => Linking.openURL("https://apps.apple.com")}
         />
+
         <View style={styles.divider} />
+
         <SettingsRow
           icon={<ShieldCheck size={18} color="#007AFF" />}
           iconBg="#E8F2FF"
-          label="Política de privacidade"
+          label={t("settings_privacy")}
           onPress={() => Linking.openURL("https://seusite.com/privacidade")}
         />
+
         <View style={styles.divider} />
+
         <SettingsRow
           icon={<FileText size={18} color="#007AFF" />}
           iconBg="#E8F2FF"
-          label="Termos de uso"
+          label={t("settings_terms")}
           onPress={() => Linking.openURL("https://seusite.com/termos")}
         />
+
         <View style={styles.divider} />
+
         <SettingsRow
           icon={<Info size={18} color="#6B7280" />}
           iconBg="#F3F4F6"
-          label="Versão 1.0.0"
+          label={t("settings_version")}
           onPress={() => {}}
           noChevron
         />
@@ -237,7 +339,17 @@ export default function SettingsScreen() {
 
 /* ================= COMPONENTES ================= */
 
-function UsageRow({ label, used, limit }: { label: string; used: number; limit: number }) {
+function UsageRow({
+  label,
+  used,
+  limit,
+  usedTodayText,
+}: {
+  label: string;
+  used: number;
+  limit: number;
+  usedTodayText: string;
+}) {
   const remaining = Math.max(0, limit - used);
   const progress = Math.min(used / limit, 1);
   const isExhausted = remaining === 0;
@@ -246,10 +358,12 @@ function UsageRow({ label, used, limit }: { label: string; used: number; limit: 
     <View style={styles.usageRow}>
       <View style={styles.usageHeader}>
         <Text style={styles.usageLabel}>{label}</Text>
+
         <Text style={[styles.usageCount, isExhausted && styles.usageCountRed]}>
-          {used}/{limit} usadas hoje
+          {usedTodayText}
         </Text>
       </View>
+
       <View style={styles.progressBar}>
         <View
           style={[
@@ -281,14 +395,21 @@ function SettingsRow({
   noChevron?: boolean;
 }) {
   return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.settingsRow} onPress={onPress}>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.settingsRow}
+      onPress={onPress}
+    >
       <View style={[styles.settingsIcon, { backgroundColor: iconBg }]}>
         {icon}
       </View>
+
       <Text style={[styles.settingsLabel, destructive && styles.settingsLabelRed]}>
         {label}
       </Text>
+
       {value && <Text style={styles.settingsValue}>{value}</Text>}
+
       {!noChevron && <ChevronRight size={18} color="#9CA3AF" />}
     </TouchableOpacity>
   );

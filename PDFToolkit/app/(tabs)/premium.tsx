@@ -19,46 +19,57 @@ import {
   Sparkles,
 } from "lucide-react-native";
 
+import { useTranslation } from "react-i18next";
 import { presentPaywall } from "@/lib/revenuecat";
 
 const features = [
-  { icon: Infinity, label: "Conversões ilimitadas por dia" },
-  { icon: Layers, label: "Processamento em lote (batch)" },
-  { icon: BanIcon, label: "Sem limites diários" },
-  { icon: ShieldCheck, label: "Proteção e desbloqueio de PDFs" },
-  { icon: Zap, label: "OCR com IA ilimitado" },
-  { icon: Star, label: "Acesso antecipado a novidades" },
+  { icon: Infinity, labelKey: "premium_feature_unlimited_conversions" },
+  { icon: Layers, labelKey: "premium_feature_batch" },
+  { icon: BanIcon, labelKey: "premium_feature_no_daily_limits" },
+  { icon: ShieldCheck, labelKey: "premium_feature_protect_unlock" },
+  { icon: Zap, labelKey: "premium_feature_ai_ocr" },
+  { icon: Star, labelKey: "premium_feature_early_access" },
 ];
 
 const plans = [
   {
     id: "monthly",
-    label: "Mensal",
-    title: "Plano flexível",
-    description: "Ideal para usar quando precisar.",
+    labelKey: "premium_plan_monthly_label",
+    titleKey: "premium_plan_monthly_title",
+    descriptionKey: "premium_plan_monthly_description",
     highlight: false,
-    badge: null,
+    badgeKey: null,
   },
   {
     id: "annual",
-    label: "Anual",
-    title: "Melhor custo-benefício",
-    description: "Economize assinando por ano.",
+    labelKey: "premium_plan_annual_label",
+    titleKey: "premium_plan_annual_title",
+    descriptionKey: "premium_plan_annual_description",
     highlight: true,
-    badge: "Recomendado",
+    badgeKey: "premium_plan_recommended",
   },
 ];
 
 export default function PremiumScreen() {
+  const { t } = useTranslation();
+
   async function handleSubscribe() {
     try {
       const success = await presentPaywall();
+
       if (success) {
-        Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
+        Alert.alert(
+          t("alert_premium_title"),
+          t("alert_premium_message")
+        );
       }
     } catch (error) {
-      console.log("Erro ao abrir paywall:", error);
-      Alert.alert("Erro", "Não foi possível abrir a tela de assinatura.");
+      console.log(t("premium_error_log"), error);
+
+      Alert.alert(
+        t("premium_error_title"),
+        t("premium_error_message")
+      );
     }
   }
 
@@ -74,20 +85,18 @@ export default function PremiumScreen() {
           <Crown size={28} color="#B45309" />
         </View>
 
-        <Text style={styles.heroTitle}>PDF Toolkit Premium</Text>
+        <Text style={styles.heroTitle}>{t("premium_hero_title")}</Text>
 
-        <Text style={styles.heroText}>
-          Processe sem limites, sem interrupções e com total privacidade.
-        </Text>
+        <Text style={styles.heroText}>{t("premium_hero_text")}</Text>
       </View>
 
       {/* Features */}
-      <Text style={styles.sectionTitle}>O que você ganha</Text>
+      <Text style={styles.sectionTitle}>{t("premium_features_title")}</Text>
 
       <View style={styles.featuresCard}>
-        {features.map(({ icon: Icon, label }, index) => (
+        {features.map(({ icon: Icon, labelKey }, index) => (
           <View
-            key={label}
+            key={labelKey}
             style={[
               styles.featureRow,
               index < features.length - 1 && styles.featureRowBorder,
@@ -97,7 +106,7 @@ export default function PremiumScreen() {
               <Icon size={16} color="#B45309" />
             </View>
 
-            <Text style={styles.featureLabel}>{label}</Text>
+            <Text style={styles.featureLabel}>{t(labelKey)}</Text>
 
             <Check size={16} color="#34C759" />
           </View>
@@ -105,7 +114,7 @@ export default function PremiumScreen() {
       </View>
 
       {/* Plans */}
-      <Text style={styles.sectionTitle}>Escolha seu plano</Text>
+      <Text style={styles.sectionTitle}>{t("premium_plans_title")}</Text>
 
       <View style={styles.plansRow}>
         {plans.map((plan) => (
@@ -115,21 +124,33 @@ export default function PremiumScreen() {
             onPress={handleSubscribe}
             style={[styles.planCard, plan.highlight && styles.planCardActive]}
           >
-            {plan.badge && (
+            {plan.badgeKey && (
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>{plan.badge}</Text>
+                <Text style={styles.badgeText}>{t(plan.badgeKey)}</Text>
               </View>
             )}
 
-            <Text style={[styles.planLabel, plan.highlight && styles.planLabelActive]}>
-              {plan.label}
+            <Text
+              style={[
+                styles.planLabel,
+                plan.highlight && styles.planLabelActive,
+              ]}
+            >
+              {t(plan.labelKey)}
             </Text>
 
-            <Text style={[styles.planTitle, plan.highlight && styles.planTitleActive]}>
-              {plan.title}
+            <Text
+              style={[
+                styles.planTitle,
+                plan.highlight && styles.planTitleActive,
+              ]}
+            >
+              {t(plan.titleKey)}
             </Text>
 
-            <Text style={styles.planDescription}>{plan.description}</Text>
+            <Text style={styles.planDescription}>
+              {t(plan.descriptionKey)}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -141,13 +162,10 @@ export default function PremiumScreen() {
         onPress={handleSubscribe}
       >
         <Sparkles size={18} color="#FFF" />
-        <Text style={styles.mainText}>Assinar agora</Text>
+        <Text style={styles.mainText}>{t("premium_cta")}</Text>
       </TouchableOpacity>
 
-      <Text style={styles.disclaimer}>
-        Os preços reais aparecem na tela segura da RevenueCat · Cancele quando
-        quiser · Renovação automática
-      </Text>
+      <Text style={styles.disclaimer}>{t("premium_disclaimer")}</Text>
 
       <View style={{ height: 40 }} />
     </ScrollView>

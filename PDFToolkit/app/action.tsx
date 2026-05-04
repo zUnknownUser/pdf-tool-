@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { presentPaywall } from "@/lib/revenuecat";
 import { styles } from "../styles/action.styles";
 import { postFormDataAndGetFileUrl } from "../utils/apiError";
+import i18n from "i18next";
 
 import {
   formatToolError,
@@ -80,34 +82,15 @@ const presetToLevel: Record<string, string> = {
   "LinkedIn 5MB": "recommended",
 };
 
-const titles: Record<string, string> = {
-  compress: "Comprimir PDF",
-  "image-to-pdf": "Imagem para PDF",
-  "pdf-to-word": "PDF para Word",
-  merge: "Juntar PDFs",
-  split: "Dividir PDF",
-  batch: "Modo lote",
-  "smart-picker": "Ação inteligente",
-  rotate: "Rotacionar PDF",
-  scan: "Escanear PDF",
-  "remove-pages": "Remover páginas",
-  protect: "Proteger PDF",
-  unlock: "Desbloquear PDF",
-  sign: "Assinar PDF",
-  watermark: "Marca d'água",
-  ocr: "Ler texto da foto",
-  preview: "Visualizar PDF",
-  premium: "Premium",
-};
-
+// ─── formatBytes usa i18n.t() pois fica fora do componente ───────────────────
 function formatBytes(bytes?: number | null) {
-  if (!bytes) return "Tamanho desconhecido";
+  if (!bytes) return i18n.t("action_file_size_unknown");
 
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const idx = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  return `${parseFloat((bytes / Math.pow(k, idx)).toFixed(2))} ${sizes[idx]}`;
 }
 
 async function getLimits() {
@@ -152,6 +135,8 @@ async function checkPremium(): Promise<boolean> {
 }
 
 export default function ActionScreen() {
+  const { t } = useTranslation();
+
   const params = useLocalSearchParams<{
     type: string;
     uri?: string;
@@ -177,11 +162,8 @@ export default function ActionScreen() {
   const AI_API_URL = `${API_BASE_URL}/ai/pdf-tools`;
 
   function goToPremium() {
-  router.push({
-    pathname: "/action",
-    params: { type: "premium" },
-  });
-}
+    router.push({ pathname: "/action", params: { type: "premium" } });
+  }
 
   const [password, setPassword] = useState("");
   const [watermarkText, setWatermarkText] = useState("");
@@ -191,8 +173,31 @@ export default function ActionScreen() {
   const [aiResult, setAiResult] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  const title = useMemo(() => titles[type] ?? "Processar arquivo", [type]);
+  // ─── título da tela ────────────────────────────────────────────────────────
+  const title = useMemo(() => {
+    const map: Record<string, string> = {
+      compress: t("action_title_compress"),
+      "image-to-pdf": t("action_title_image_to_pdf"),
+      "pdf-to-word": t("action_title_pdf_to_word"),
+      merge: t("action_title_merge"),
+      split: t("action_title_split"),
+      batch: t("action_title_batch"),
+      "smart-picker": t("action_title_smart_picker"),
+      rotate: t("action_title_rotate"),
+      scan: t("action_title_scan"),
+      "remove-pages": t("action_title_remove_pages"),
+      protect: t("action_title_protect"),
+      unlock: t("action_title_unlock"),
+      sign: t("action_title_sign"),
+      watermark: t("action_title_watermark"),
+      ocr: t("action_title_ocr"),
+      preview: t("action_title_preview"),
+      premium: t("action_title_premium"),
+    };
+    return map[type] ?? t("action_title_default");
+  }, [type, t]);
 
+  // ─── ícone da ferramenta ───────────────────────────────────────────────────
   const icon = useMemo(() => {
     if (type === "image-to-pdf") return <Images size={26} color="#007AFF" />;
     if (type === "merge") return <Combine size={26} color="#007AFF" />;
@@ -210,36 +215,28 @@ export default function ActionScreen() {
     if (type === "ocr") return <ScanText size={26} color="#007AFF" />;
     if (type === "preview") return <Eye size={26} color="#007AFF" />;
     if (type === "premium") return <Crown size={26} color="#B45309" />;
-
     return <File size={26} color="#007AFF" />;
   }, [type]);
 
+  // ─── subtítulo da tela ─────────────────────────────────────────────────────
   const subtitle = useMemo(() => {
-    if (type === "ocr") {
-      return "Extraia texto de imagens e use IA para resumir, explicar ou gerar perguntas.";
-    }
-
-    if (type === "smart-picker") return "Selecione um arquivo e o app sugere a melhor ação.";
-    if (type === "batch") return `Selecione até ${BATCH_FREE_LIMIT} arquivos no plano grátis.`;
-    if (type === "preview") return "Abra, confira e compartilhe seu PDF.";
-    if (type === "premium") return "Libere processamento ilimitado e ferramentas avançadas.";
-    if (type === "scan") return "Fotografe um documento e converta para PDF.";
-    if (type === "pdf-to-word") return "Converta seu PDF em documento Word editável.";
-
-    return "Escolha o arquivo e processe em segundos.";
-  }, [type]);
+    if (type === "ocr") return t("action_sub_ocr");
+    if (type === "smart-picker") return t("action_sub_smart_picker");
+    if (type === "batch") return t("action_sub_batch", { limit: BATCH_FREE_LIMIT });
+    if (type === "preview") return t("action_sub_preview");
+    if (type === "premium") return t("action_sub_premium");
+    if (type === "scan") return t("action_sub_scan");
+    if (type === "pdf-to-word") return t("action_sub_pdf_to_word");
+    return t("action_sub_default");
+  }, [type, t]);
 
   const requiresMultiplePdf =
     type === "merge" || type === "batch" || type === "smart-picker";
 
+  // ─── helpers de arquivo ────────────────────────────────────────────────────
   async function prepareFileForUpload(uri: string, extension = "pdf") {
     const safePath = `${FileSystem.cacheDirectory}upload-${Date.now()}.${extension}`;
-
-    await FileSystem.copyAsync({
-      from: uri,
-      to: safePath,
-    });
-
+    await FileSystem.copyAsync({ from: uri, to: safePath });
     return safePath;
   }
 
@@ -269,7 +266,7 @@ export default function ActionScreen() {
         setFileUri(file.uri);
         setFileSize(file.size ?? null);
       } else {
-        setFileName(`${assets.length} arquivos selecionados`);
+        setFileName(t("action_files_selected", { count: assets.length }));
         setFileUri(assets[0]?.uri ?? null);
         setFileSize(null);
       }
@@ -282,10 +279,7 @@ export default function ActionScreen() {
       if (type === "smart-picker") suggestAction(assets);
     } catch (err) {
       console.error("Erro pickFile:", err);
-
-      showAppError(formatToolError(err, "file-picker"), {
-        onTryAgain: pickFile,
-      });
+      showAppError(formatToolError(err, "file-picker"), { onTryAgain: pickFile });
     }
   }
 
@@ -316,8 +310,8 @@ export default function ActionScreen() {
 
       setFileName(
         images.length === 1
-          ? "1 imagem selecionada"
-          : `${images.length} imagens selecionadas`
+          ? t("action_image_selected_one")
+          : t("action_images_selected", { count: images.length })
       );
 
       setFileUri(images[0]?.uri ?? null);
@@ -330,7 +324,6 @@ export default function ActionScreen() {
       setAiResult("");
     } catch (err) {
       console.error("Erro pickImageFromGallery:", err);
-
       showAppError(formatToolError(err, "gallery"), {
         onTryAgain: pickImageFromGallery,
       });
@@ -342,12 +335,8 @@ export default function ActionScreen() {
       const allPdf = files.every((f) =>
         String(f.mimeType || f.name).toLowerCase().includes("pdf")
       );
-
       if (allPdf) {
-        Alert.alert(
-          "Sugestão",
-          "Você selecionou vários PDFs. A melhor ação parece ser: Juntar PDFs."
-        );
+        Alert.alert(t("alert_suggest_title"), t("alert_suggest_merge"));
         return;
       }
     }
@@ -356,28 +345,24 @@ export default function ActionScreen() {
     const name = String(first?.name ?? "").toLowerCase();
     const mime = String(first?.mimeType ?? "").toLowerCase();
 
-    if (mime.includes("image") || name.endsWith(".jpg") || name.endsWith(".png")) {
-      Alert.alert(
-        "Sugestão",
-        "Você selecionou uma imagem. A melhor ação parece ser: Imagem para PDF ou OCR."
-      );
+    if (
+      mime.includes("image") ||
+      name.endsWith(".jpg") ||
+      name.endsWith(".png")
+    ) {
+      Alert.alert(t("alert_suggest_title"), t("alert_suggest_image"));
       return;
     }
 
     if (first?.size && first.size > 10 * 1024 * 1024) {
-      Alert.alert(
-        "Sugestão",
-        "Esse PDF parece grande. A melhor ação parece ser: Comprimir PDF."
-      );
+      Alert.alert(t("alert_suggest_title"), t("alert_suggest_compress"));
       return;
     }
 
-    Alert.alert(
-      "Sugestão",
-      "Arquivo identificado. Você pode comprimir, dividir, proteger ou compartilhar."
-    );
+    Alert.alert(t("alert_suggest_title"), t("alert_suggest_generic"));
   }
 
+  // ─── OCR ──────────────────────────────────────────────────────────────────
   async function runOCR() {
     if (!fileUri) {
       showAppError(getNoFileError("ocr"), {
@@ -390,9 +375,7 @@ export default function ActionScreen() {
     const allowed = await checkLimit("ocr");
 
     if (!allowed) {
-      showAppError(getFreeLimitError("ocr"), {
-        onGoPremium: goToPremium,
-      });
+      showAppError(getFreeLimitError("ocr"), { onGoPremium: goToPremium });
       return;
     }
 
@@ -404,21 +387,24 @@ export default function ActionScreen() {
       const text = result?.text?.trim() ?? "";
 
       if (!text) {
-        showAppError(getFriendlyError(new Error("Nenhum texto encontrado"), "ocr", "OCR_NO_TEXT_FOUND"), {
-          onPickImage: pickImageFromGallery,
-        });
+        showAppError(
+          getFriendlyError(
+            new Error("Nenhum texto encontrado"),
+            "ocr",
+            "OCR_NO_TEXT_FOUND"
+          ),
+          { onPickImage: pickImageFromGallery }
+        );
         return;
       }
 
       setOcrText(text);
       setProcessed(true);
-
       await incrementLimit("ocr");
 
-      Alert.alert("OCR concluído", "Texto extraído com sucesso.");
+      Alert.alert(t("alert_ocr_title"), t("alert_ocr_message"));
     } catch (err) {
       console.error("Erro OCR:", err);
-
       showAppError(formatToolError(err, "ocr"), {
         onTryAgain: runOCR,
         onPickImage: pickImageFromGallery,
@@ -428,9 +414,14 @@ export default function ActionScreen() {
     }
   }
 
-  async function askAI(action: "summary" | "important" | "questions" | "explain") {
+  // ─── IA ───────────────────────────────────────────────────────────────────
+  async function askAI(
+    action: "summary" | "important" | "questions" | "explain"
+  ) {
     if (!ocrText) {
-      showAppError(getFriendlyError(new Error("Texto vazio"), "ai", "AI_EMPTY_TEXT"));
+      showAppError(
+        getFriendlyError(new Error("Texto vazio"), "ai", "AI_EMPTY_TEXT")
+      );
       return;
     }
 
@@ -449,10 +440,9 @@ export default function ActionScreen() {
       }
 
       const data = await response.json();
-      setAiResult(data.result ?? "A IA não retornou resultado.");
+      setAiResult(data.result ?? t("action_ocr_no_result"));
     } catch (err) {
       console.error("Erro askAI:", err);
-
       showAppError(formatToolError(err, "ai"), {
         onTryAgain: () => askAI(action),
       });
@@ -461,6 +451,7 @@ export default function ActionScreen() {
     }
   }
 
+  // ─── imagem → PDF ──────────────────────────────────────────────────────────
   async function imagesToPdf(images: any[]) {
     let htmlImages = "";
 
@@ -468,7 +459,6 @@ export default function ActionScreen() {
       const base64 = await FileSystem.readAsStringAsync(img.uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
       htmlImages += `
         <div class="page">
           <img src="data:image/jpeg;base64,${base64}" />
@@ -497,9 +487,7 @@ export default function ActionScreen() {
     const pdf = await Print.printToFileAsync({ html, base64: false });
     const newFileName = `pdftoolkit-${Date.now()}.pdf`;
     const newUri = `${FileSystem.documentDirectory}${newFileName}`;
-
     await FileSystem.copyAsync({ from: pdf.uri, to: newUri });
-
     return newUri;
   }
 
@@ -509,20 +497,17 @@ export default function ActionScreen() {
 
   async function fakeCopyPdf(actionName: string) {
     if (!fileUri) {
-      showAppError(getNoFileError(type as any), {
-        onPickFile: pickFile,
-      });
+      showAppError(getNoFileError(type as any), { onPickFile: pickFile });
       return null;
     }
 
     const safeName = `${actionName.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.pdf`;
     const newUri = `${FileSystem.documentDirectory}${safeName}`;
-
     await FileSystem.copyAsync({ from: fileUri, to: newUri });
-
     return newUri;
   }
 
+  // ─── proteger / desbloquear ───────────────────────────────────────────────
   async function protectPdfWithPassword(pdfUri: string, pwd: string) {
     if (!pwd.trim()) {
       showAppError(
@@ -536,7 +521,6 @@ export default function ActionScreen() {
     }
 
     const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
     const formData = new FormData();
     formData.append("file", {
       uri: safeUri,
@@ -552,7 +536,6 @@ export default function ActionScreen() {
 
     const localUri = `${FileSystem.documentDirectory}protected-${Date.now()}.pdf`;
     const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
-
     return downloaded.uri;
   }
 
@@ -569,7 +552,6 @@ export default function ActionScreen() {
     }
 
     const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
     const formData = new FormData();
     formData.append("file", {
       uri: safeUri,
@@ -585,10 +567,10 @@ export default function ActionScreen() {
 
     const localUri = `${FileSystem.documentDirectory}unlocked-${Date.now()}.pdf`;
     const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
-
     return downloaded.uri;
   }
 
+  // ─── marca d'água ─────────────────────────────────────────────────────────
   async function addWatermark(pdfUri: string, text: string) {
     if (!text.trim()) {
       showAppError(
@@ -602,7 +584,6 @@ export default function ActionScreen() {
     }
 
     const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
     const formData = new FormData();
     formData.append("file", {
       uri: safeUri,
@@ -618,18 +599,16 @@ export default function ActionScreen() {
 
     const localUri = `${FileSystem.documentDirectory}watermark-${Date.now()}.pdf`;
     const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
-
     return downloaded.uri;
   }
 
+  // ─── assinatura ───────────────────────────────────────────────────────────
   async function saveSignatureToFile(signatureBase64: string) {
     const cleanBase64 = signatureBase64.replace("data:image/png;base64,", "");
     const path = `${FileSystem.cacheDirectory}signature-${Date.now()}.png`;
-
     await FileSystem.writeAsStringAsync(path, cleanBase64, {
       encoding: FileSystem.EncodingType.Base64,
     });
-
     return path;
   }
 
@@ -643,13 +622,11 @@ export default function ActionScreen() {
       name: fileName ?? "documento.pdf",
       type: "application/pdf",
     } as any);
-
     formData.append("signature", {
       uri: safeSignUri,
       name: "signature.png",
       type: "image/png",
     } as any);
-
     formData.append("page", "1");
     formData.append("x", "350");
     formData.append("y", "80");
@@ -663,30 +640,23 @@ export default function ActionScreen() {
 
     const localUri = `${FileSystem.documentDirectory}signed-${Date.now()}.pdf`;
     const downloaded = await FileSystem.downloadAsync(fileUrl, localUri);
-
     return downloaded.uri;
   }
 
   async function handleSignatureOK(signatureBase64: string) {
     try {
       const savedUri = await saveSignatureToFile(signatureBase64);
-
       setSignatureUri(savedUri);
       await AsyncStorage.setItem(SAVED_SIGNATURE_KEY, savedUri);
-
       setShowSignaturePad(false);
       setLoading(true);
 
       if (!fileUri) {
-        showAppError(getNoFileError("sign"), {
-          onPickFile: pickFile,
-        });
+        showAppError(getNoFileError("sign"), { onPickFile: pickFile });
         return;
       }
 
-      const pdfUri = fileUri;
-      const signedUri = await signPdfWithSignature(pdfUri, savedUri);
-
+      const signedUri = await signPdfWithSignature(fileUri, savedUri);
       setOutputUri(signedUri);
       setProcessed(true);
 
@@ -698,14 +668,11 @@ export default function ActionScreen() {
         size: fileSize,
       });
 
-      Alert.alert("PDF assinado", "Sua assinatura foi salva e aplicada ao PDF.");
+      Alert.alert(t("alert_sign_title"), t("alert_sign_message"));
     } catch (error) {
       console.error("Erro ao finalizar assinatura:", error);
-
       showAppError(formatToolError(error, "sign"), {
-        onTryAgain: () => {
-          setShowSignaturePad(true);
-        },
+        onTryAgain: () => setShowSignaturePad(true),
         onPickFile: pickFile,
       });
     } finally {
@@ -713,41 +680,30 @@ export default function ActionScreen() {
     }
   }
 
+  // ─── processamento principal ───────────────────────────────────────────────
   async function processFile() {
     const hasGalleryImages = selectedImages.length > 0;
     const hasSelectedFile = !!fileUri || selectedFiles.length > 0;
 
+    // Premium
     if (type === "premium") {
       try {
         setLoading(true);
-
         const success = await presentPaywall();
-
         if (success) {
-          Alert.alert("Premium ativado", "Seu acesso Premium foi liberado.");
+          Alert.alert(t("alert_premium_title"), t("alert_premium_message"));
         }
       } catch (error) {
         console.log("Erro ao abrir paywall:", error);
-
-        showAppError(formatToolError(error, "premium"), {
-          onTryAgain: processFile,
-        });
+        showAppError(formatToolError(error, "premium"), { onTryAgain: processFile });
       } finally {
         setLoading(false);
       }
-
       return;
     }
 
-    if (type === "ocr") {
-      await runOCR();
-      return;
-    }
-
-    if (type === "preview") {
-      await shareFile();
-      return;
-    }
+    if (type === "ocr") { await runOCR(); return; }
+    if (type === "preview") { await shareFile(); return; }
 
     if (type !== "image-to-pdf" && type !== "scan" && !hasSelectedFile) {
       showAppError(getNoFileError(type as any), {
@@ -765,45 +721,44 @@ export default function ActionScreen() {
       return;
     }
 
+    // Batch
     if (type === "batch") {
       const isPremium = await checkPremium();
       const count = selectedFiles.length || 1;
-
       if (!isPremium && count > BATCH_FREE_LIMIT) {
-        showAppError(getFriendlyError(new Error("Muitos arquivos"), "batch", "TOO_MANY_FILES"), {
-          onGoPremium: goToPremium,
-        });
+        showAppError(
+          getFriendlyError(new Error("Muitos arquivos"), "batch", "TOO_MANY_FILES"),
+          { onGoPremium: goToPremium }
+        );
         return;
       }
-
-      Alert.alert("Modo lote pronto", `${count} arquivo(s) selecionado(s).`);
+      Alert.alert(
+        t("alert_batch_title"),
+        t("alert_batch_message", { count })
+      );
       return;
     }
 
+    // Smart picker
     if (type === "smart-picker") {
-      Alert.alert("Ação inteligente", "Sugestão já exibida.");
+      Alert.alert(t("alert_smart_picker_title"), t("alert_smart_picker_message"));
       return;
     }
 
     try {
       setLoading(true);
 
+      // Proteger
       if (type === "protect") {
         if (!fileUri) {
-          showAppError(getNoFileError("protect"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("protect"), { onPickFile: pickFile });
           return;
         }
-
-        const pdfUri = fileUri;
-        const protectedUri = await protectPdfWithPassword(pdfUri, password);
-
+        const protectedUri = await protectPdfWithPassword(fileUri, password);
         if (!protectedUri) return;
 
         setOutputUri(protectedUri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `protegido-${fileName ?? "arquivo.pdf"}`,
@@ -811,27 +766,21 @@ export default function ActionScreen() {
           date: new Date().toISOString(),
           size: fileSize,
         });
-
-        Alert.alert("PDF protegido", "Seu PDF foi protegido com senha.");
+        Alert.alert(t("alert_protect_title"), t("alert_protect_message"));
         return;
       }
 
+      // Marca d'água
       if (type === "watermark") {
         if (!fileUri) {
-          showAppError(getNoFileError("watermark"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("watermark"), { onPickFile: pickFile });
           return;
         }
-
-        const pdfUri = fileUri;
-        const newUri = await addWatermark(pdfUri, watermarkText.trim());
-
+        const newUri = await addWatermark(fileUri, watermarkText.trim());
         if (!newUri) return;
 
         setOutputUri(newUri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `marca-dagua-${fileName ?? "arquivo.pdf"}`,
@@ -839,27 +788,21 @@ export default function ActionScreen() {
           date: new Date().toISOString(),
           size: fileSize,
         });
-
-        Alert.alert("Marca d'água aplicada");
+        Alert.alert(t("alert_watermark_title"));
         return;
       }
 
+      // Desbloquear
       if (type === "unlock") {
         if (!fileUri) {
-          showAppError(getNoFileError("unlock"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("unlock"), { onPickFile: pickFile });
           return;
         }
-
-        const pdfUri = fileUri;
-        const unlockedUri = await unlockPdfWithPassword(pdfUri, password);
-
+        const unlockedUri = await unlockPdfWithPassword(fileUri, password);
         if (!unlockedUri) return;
 
         setOutputUri(unlockedUri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `desbloqueado-${fileName ?? "arquivo.pdf"}`,
@@ -867,16 +810,14 @@ export default function ActionScreen() {
           date: new Date().toISOString(),
           size: fileSize,
         });
-
-        Alert.alert("PDF desbloqueado", "Seu PDF foi desbloqueado com sucesso.");
+        Alert.alert(t("alert_unlock_title"), t("alert_unlock_message"));
         return;
       }
 
+      // Assinar
       if (type === "sign") {
         if (!fileUri) {
-          showAppError(getNoFileError("sign"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("sign"), { onPickFile: pickFile });
           return;
         }
 
@@ -885,20 +826,18 @@ export default function ActionScreen() {
 
         if (saved) {
           setLoading(false);
-
           Alert.alert(
-            "Assinatura salva encontrada",
-            "Deseja usar sua assinatura salva?",
+            t("action_sign_found_title"),
+            t("action_sign_found_message"),
             [
               {
-                text: "Usar",
+                text: t("action_sign_use_saved"),
                 onPress: async () => {
                   try {
                     setLoading(true);
                     setSignatureUri(saved);
 
                     const signedUri = await signPdfWithSignature(pdfUri, saved);
-
                     setOutputUri(signedUri);
                     setProcessed(true);
 
@@ -910,10 +849,9 @@ export default function ActionScreen() {
                       size: fileSize,
                     });
 
-                    Alert.alert("PDF assinado", "Sua assinatura salva foi usada.");
+                    Alert.alert(t("alert_sign_title"), t("alert_sign_saved_message"));
                   } catch (error) {
                     console.error("Erro ao usar assinatura salva:", error);
-
                     showAppError(formatToolError(error, "sign"), {
                       onTryAgain: async () => {
                         try {
@@ -921,7 +859,6 @@ export default function ActionScreen() {
                           setSignatureUri(saved);
 
                           const signedUri = await signPdfWithSignature(pdfUri, saved);
-
                           setOutputUri(signedUri);
                           setProcessed(true);
 
@@ -933,7 +870,7 @@ export default function ActionScreen() {
                             size: fileSize,
                           });
 
-                          Alert.alert("PDF assinado", "Sua assinatura salva foi usada.");
+                          Alert.alert(t("alert_sign_title"), t("alert_sign_saved_message"));
                         } catch (err) {
                           showAppError(formatToolError(err, "sign"));
                         } finally {
@@ -948,7 +885,7 @@ export default function ActionScreen() {
                 },
               },
               {
-                text: "Nova assinatura",
+                text: t("action_sign_new"),
                 onPress: () => {
                   setSignatureUri(null);
                   setShowSignaturePad(true);
@@ -956,7 +893,6 @@ export default function ActionScreen() {
               },
             ]
           );
-
           return;
         }
 
@@ -965,6 +901,7 @@ export default function ActionScreen() {
         return;
       }
 
+      // Imagem → PDF
       if (type === "image-to-pdf") {
         const pdfUri = hasGalleryImages
           ? await imagesToPdf(selectedImages)
@@ -972,45 +909,35 @@ export default function ActionScreen() {
 
         setOutputUri(pdfUri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: fileName ?? "imagem-para-pdf.pdf",
           uri: pdfUri,
           date: new Date().toISOString(),
         });
-
-        Alert.alert("PDF criado", "Seu PDF foi gerado com sucesso.");
+        Alert.alert(t("alert_image_to_pdf_title"), t("alert_image_to_pdf_message"));
         return;
       }
 
+      // Comprimir
       if (type === "compress") {
         const allowed = await checkLimit("compress");
-
         if (!allowed) {
-          showAppError(getFreeLimitError("compress"), {
-            onGoPremium: goToPremium,
-          });
+          showAppError(getFreeLimitError("compress"), { onGoPremium: goToPremium });
           return;
         }
-
         if (!fileUri) {
-          showAppError(getNoFileError("compress"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("compress"), { onPickFile: pickFile });
           return;
         }
 
-        const pdfUri = fileUri;
-        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
+        const safeUri = await prepareFileForUpload(fileUri, "pdf");
         const formData = new FormData();
         formData.append("file", {
           uri: safeUri,
           name: fileName ?? "documento.pdf",
           type: "application/pdf",
         } as any);
-
         formData.append(
           "compression_level",
           presetToLevel[selectedPreset] ?? "recommended"
@@ -1026,7 +953,6 @@ export default function ActionScreen() {
 
         setOutputUri(downloaded.uri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `comprimido-${fileName ?? "arquivo.pdf"}`,
@@ -1034,15 +960,14 @@ export default function ActionScreen() {
           date: new Date().toISOString(),
           size: fileSize,
         });
-
-        Alert.alert("PDF comprimido", "Seu PDF foi comprimido com sucesso.");
+        Alert.alert(t("alert_compress_title"), t("alert_compress_message"));
         await incrementLimit("compress");
         return;
       }
 
+      // Escanear
       if (type === "scan") {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
-
         if (!permission.granted) {
           showAppError(
             getFriendlyError(
@@ -1055,25 +980,22 @@ export default function ActionScreen() {
         }
 
         const result = await ImagePicker.launchCameraAsync({ quality: 1 });
-
         if (result.canceled) return;
 
         const pdfUri = await imagesToPdf(result.assets);
-
         setOutputUri(pdfUri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `scan-${Date.now()}.pdf`,
           uri: pdfUri,
           date: new Date().toISOString(),
         });
-
-        Alert.alert("PDF criado", "Documento escaneado com sucesso.");
+        Alert.alert(t("alert_scan_title"), t("alert_scan_message"));
         return;
       }
 
+      // Juntar
       if (type === "merge") {
         if (selectedFiles.length < 2) {
           showAppError(
@@ -1082,18 +1004,14 @@ export default function ActionScreen() {
               "merge",
               "MIN_FILES_REQUIRED"
             ),
-            {
-              onPickFile: pickFile,
-            }
+            { onPickFile: pickFile }
           );
           return;
         }
 
         const formData = new FormData();
-
         for (const file of selectedFiles) {
           const safeUri = await prepareFileForUpload(file.uri, "pdf");
-
           formData.append("files", {
             uri: safeUri,
             name: file.name ?? "documento.pdf",
@@ -1111,26 +1029,22 @@ export default function ActionScreen() {
 
         setOutputUri(downloaded.uri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `unido-${Date.now()}.pdf`,
           uri: downloaded.uri,
           date: new Date().toISOString(),
         });
-
-        Alert.alert("PDFs unidos", "Seus arquivos foram unidos com sucesso.");
+        Alert.alert(t("alert_merge_title"), t("alert_merge_message"));
         return;
       }
 
+      // Dividir
       if (type === "split") {
         if (!fileUri) {
-          showAppError(getNoFileError("split"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("split"), { onPickFile: pickFile });
           return;
         }
-
         if (!pageRange.trim()) {
           showAppError(
             getFriendlyError(
@@ -1142,9 +1056,7 @@ export default function ActionScreen() {
           return;
         }
 
-        const pdfUri = fileUri;
-        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
+        const safeUri = await prepareFileForUpload(fileUri, "pdf");
         const formData = new FormData();
         formData.append("file", {
           uri: safeUri,
@@ -1163,41 +1075,31 @@ export default function ActionScreen() {
 
         setOutputUri(downloaded.uri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `dividido-${Date.now()}.zip`,
           uri: downloaded.uri,
           date: new Date().toISOString(),
         });
-
-        Alert.alert(
-          "PDF dividido",
-          "Seu PDF foi dividido com sucesso. O resultado é um .zip."
-        );
+        Alert.alert(t("alert_split_title"), t("alert_split_message"));
         return;
       }
 
+      // PDF → Word
       if (type === "pdf-to-word") {
         const isPremium = await checkPremium();
-
         if (!isPremium) {
           showAppError(getPremiumRequiredError("pdf-to-word"), {
             onGoPremium: goToPremium,
           });
           return;
         }
-
         if (!fileUri) {
-          showAppError(getNoFileError("pdf-to-word"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("pdf-to-word"), { onPickFile: pickFile });
           return;
         }
 
-        const pdfUri = fileUri;
-        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
+        const safeUri = await prepareFileForUpload(fileUri, "pdf");
         const formData = new FormData();
         formData.append("file", {
           uri: safeUri,
@@ -1215,29 +1117,24 @@ export default function ActionScreen() {
 
         setOutputUri(downloaded.uri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `word-${fileName ?? "arquivo.docx"}`,
           uri: downloaded.uri,
           date: new Date().toISOString(),
         });
-
-        Alert.alert("Convertido!", "Seu PDF foi convertido para Word com sucesso.");
+        Alert.alert(t("alert_pdf_to_word_title"), t("alert_pdf_to_word_message"));
         return;
       }
 
+      // Rotacionar
       if (type === "rotate") {
         if (!fileUri) {
-          showAppError(getNoFileError("rotate"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("rotate"), { onPickFile: pickFile });
           return;
         }
 
-        const pdfUri = fileUri;
-        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
+        const safeUri = await prepareFileForUpload(fileUri, "pdf");
         const formData = new FormData();
         formData.append("file", {
           uri: safeUri,
@@ -1256,7 +1153,6 @@ export default function ActionScreen() {
 
         setOutputUri(downloaded.uri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `rotacionado-${fileName ?? "arquivo.pdf"}`,
@@ -1264,19 +1160,16 @@ export default function ActionScreen() {
           date: new Date().toISOString(),
           size: fileSize,
         });
-
-        Alert.alert("PDF rotacionado", "Seu PDF foi rotacionado com sucesso.");
+        Alert.alert(t("alert_rotate_title"), t("alert_rotate_message"));
         return;
       }
 
+      // Remover páginas
       if (type === "remove-pages") {
         if (!fileUri) {
-          showAppError(getNoFileError("remove-pages"), {
-            onPickFile: pickFile,
-          });
+          showAppError(getNoFileError("remove-pages"), { onPickFile: pickFile });
           return;
         }
-
         if (!pageRange.trim()) {
           showAppError(
             getFriendlyError(
@@ -1288,9 +1181,7 @@ export default function ActionScreen() {
           return;
         }
 
-        const pdfUri = fileUri;
-        const safeUri = await prepareFileForUpload(pdfUri, "pdf");
-
+        const safeUri = await prepareFileForUpload(fileUri, "pdf");
         const formData = new FormData();
         formData.append("file", {
           uri: safeUri,
@@ -1309,7 +1200,6 @@ export default function ActionScreen() {
 
         setOutputUri(downloaded.uri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `paginas-removidas-${fileName ?? "arquivo.pdf"}`,
@@ -1317,17 +1207,15 @@ export default function ActionScreen() {
           date: new Date().toISOString(),
           size: fileSize,
         });
-
-        Alert.alert("Páginas removidas", "As páginas foram removidas com sucesso.");
+        Alert.alert(t("alert_remove_pages_title"), t("alert_remove_pages_message"));
         return;
       }
 
+      // Fallback genérico
       const newUri = await fakeCopyPdf(type);
-
       if (newUri) {
         setOutputUri(newUri);
         setProcessed(true);
-
         await saveToHistory({
           id: Date.now().toString(),
           name: `${type}-${fileName ?? "arquivo.pdf"}`,
@@ -1336,11 +1224,9 @@ export default function ActionScreen() {
           size: fileSize,
         });
       }
-
-      Alert.alert("Ferramenta preparada");
+      Alert.alert(t("alert_tool_ready"));
     } catch (error) {
       console.error("Erro processFile:", error);
-
       showAppError(formatToolError(error, type as any), {
         onPickFile: pickFile,
         onPickImage: pickImageFromGallery,
@@ -1352,19 +1238,16 @@ export default function ActionScreen() {
     }
   }
 
+  // ─── compartilhar ──────────────────────────────────────────────────────────
   async function shareFile() {
     try {
       const uriToShare = outputUri ?? fileUri;
-
       if (!uriToShare) {
-        showAppError(getNoFileError("share"), {
-          onPickFile: pickFile,
-        });
+        showAppError(getNoFileError("share"), { onPickFile: pickFile });
         return;
       }
 
       const available = await Sharing.isAvailableAsync();
-
       if (!available) {
         showAppError(
           getFriendlyError(
@@ -1378,27 +1261,25 @@ export default function ActionScreen() {
 
       await Sharing.shareAsync(uriToShare, {
         mimeType: "application/pdf",
-        dialogTitle: "Compartilhar PDF",
+        dialogTitle: t("alert_share_title"),
         UTI: "com.adobe.pdf",
       });
     } catch (error) {
       console.error("Erro shareFile:", error);
-
-      showAppError(formatToolError(error, "share"), {
-        onTryAgain: shareFile,
-      });
+      showAppError(formatToolError(error, "share"), { onTryAgain: shareFile });
     }
   }
 
+  // ─── campos extras (senha / páginas / watermark) ───────────────────────────
   function renderExtraFields() {
     if (type === "protect" || type === "unlock") {
       return (
         <View style={styles.extraBox}>
-          <Text style={styles.extraLabel}>Senha</Text>
+          <Text style={styles.extraLabel}>{t("action_label_password")}</Text>
           <TextInput
             value={password}
             onChangeText={setPassword}
-            placeholder="Digite a senha do PDF"
+            placeholder={t("action_placeholder_password")}
             placeholderTextColor="#9CA3AF"
             secureTextEntry
             style={styles.input}
@@ -1410,11 +1291,11 @@ export default function ActionScreen() {
     if (type === "split" || type === "remove-pages") {
       return (
         <View style={styles.extraBox}>
-          <Text style={styles.extraLabel}>Páginas</Text>
+          <Text style={styles.extraLabel}>{t("action_label_pages")}</Text>
           <TextInput
             value={pageRange}
             onChangeText={setPageRange}
-            placeholder="Ex: 1-3, 5, 8"
+            placeholder={t("action_placeholder_pages")}
             placeholderTextColor="#9CA3AF"
             style={styles.input}
           />
@@ -1425,11 +1306,11 @@ export default function ActionScreen() {
     if (type === "watermark") {
       return (
         <View style={styles.extraBox}>
-          <Text style={styles.extraLabel}>Texto da marca d'água</Text>
+          <Text style={styles.extraLabel}>{t("action_label_watermark_text")}</Text>
           <TextInput
             value={watermarkText}
             onChangeText={setWatermarkText}
-            placeholder="Ex: CONFIDENCIAL"
+            placeholder={t("action_placeholder_watermark")}
             placeholderTextColor="#9CA3AF"
             style={styles.input}
           />
@@ -1440,15 +1321,16 @@ export default function ActionScreen() {
     return null;
   }
 
+  // ─── tela de assinatura ────────────────────────────────────────────────────
   if (showSignaturePad) {
     return (
       <View style={{ flex: 1, backgroundColor: "#fff" }}>
         <View style={{ padding: 16, paddingTop: 50 }}>
           <Text style={{ fontSize: 20, fontWeight: "700", textAlign: "center" }}>
-            Assinar PDF
+            {t("action_sign_screen_title")}
           </Text>
           <Text style={{ marginTop: 8, color: "#6B7280", textAlign: "center" }}>
-            Desenhe sua assinatura e toque em Salvar
+            {t("action_sign_screen_subtitle")}
           </Text>
         </View>
 
@@ -1464,9 +1346,9 @@ export default function ActionScreen() {
                 )
               )
             }
-            descriptionText="Assine no espaço abaixo"
-            clearText="Limpar"
-            confirmText="Salvar"
+            descriptionText={t("action_sign_description")}
+            clearText={t("action_sign_clear")}
+            confirmText={t("action_sign_save")}
             webStyle={`
               .m-signature-pad {
                 box-shadow: none;
@@ -1511,20 +1393,23 @@ export default function ActionScreen() {
           onPress={() => setShowSignaturePad(false)}
         >
           <Text style={{ textAlign: "center", color: "#EF4444", fontWeight: "700" }}>
-            Cancelar
+            {t("action_sign_cancel")}
           </Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ─── tela principal ────────────────────────────────────────────────────────
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Barra de privacidade */}
       <View style={styles.privacy}>
         <Lock size={16} color="#34C759" />
-        <Text style={styles.privacyText}>Processamento local sempre que possível</Text>
+        <Text style={styles.privacyText}>{t("action_privacy_text")}</Text>
       </View>
 
+      {/* Card principal */}
       <View style={styles.card}>
         <View style={styles.iconBox}>{icon}</View>
         <Text style={styles.title}>{title}</Text>
@@ -1532,11 +1417,8 @@ export default function ActionScreen() {
 
         {type === "ocr" && (
           <View style={styles.tipBox}>
-            <Text style={styles.tipTitle}>Como funciona</Text>
-            <Text style={styles.tipText}>
-              Escolha uma imagem com texto. Primeiro o app extrai o texto, depois
-              você pode resumir, explicar ou gerar perguntas com IA.
-            </Text>
+            <Text style={styles.tipTitle}>{t("action_ocr_how_title")}</Text>
+            <Text style={styles.tipText}>{t("action_ocr_how_text")}</Text>
           </View>
         )}
 
@@ -1554,30 +1436,40 @@ export default function ActionScreen() {
               <Text style={styles.pickText}>
                 {fileName ??
                   (type === "image-to-pdf" || type === "ocr"
-                    ? "Escolher da Galeria"
+                    ? t("action_pick_gallery")
                     : requiresMultiplePdf
-                    ? "Selecionar arquivos"
-                    : "Selecionar arquivo")}
+                    ? t("action_pick_multiple")
+                    : t("action_pick_single"))}
               </Text>
             </TouchableOpacity>
 
             {(type === "image-to-pdf" || type === "ocr") && (
-              <TouchableOpacity style={styles.secondaryPickBtn} onPress={pickFile}>
-                <Text style={styles.secondaryPickText}>Escolher dos Arquivos</Text>
+              <TouchableOpacity
+                style={styles.secondaryPickBtn}
+                onPress={pickFile}
+              >
+                <Text style={styles.secondaryPickText}>
+                  {t("action_pick_files")}
+                </Text>
               </TouchableOpacity>
             )}
 
             {fileSize !== null && (
-              <Text style={styles.fileSize}>Tamanho: {formatBytes(fileSize)}</Text>
+              <Text style={styles.fileSize}>
+                {t("action_file_size", { size: formatBytes(fileSize) })}
+              </Text>
             )}
 
             {selectedFiles.length > 1 && (
-              <Text style={styles.fileSize}>{selectedFiles.length} arquivos selecionados</Text>
+              <Text style={styles.fileSize}>
+                {t("action_files_selected", { count: selectedFiles.length })}
+              </Text>
             )}
           </>
         )}
       </View>
 
+      {/* Presets de compressão */}
       {type === "compress" && (
         <>
           <Text style={styles.section}>Preset</Text>
@@ -1604,16 +1496,18 @@ export default function ActionScreen() {
 
       {renderExtraFields()}
 
+      {/* Texto extraído pelo OCR */}
       {type === "ocr" && ocrText.length > 0 && (
         <View style={styles.extraBox}>
-          <Text style={styles.extraLabel}>Texto extraído</Text>
+          <Text style={styles.extraLabel}>{t("action_ocr_extracted")}</Text>
           <Text style={styles.resultText}>{ocrText}</Text>
         </View>
       )}
 
+      {/* Botões de IA */}
       {type === "ocr" && ocrText.length > 0 && (
         <View style={styles.steps}>
-          <Text style={styles.stepsTitle}>Usar IA</Text>
+          <Text style={styles.stepsTitle}>{t("action_ocr_use_ai")}</Text>
 
           <TouchableOpacity
             style={styles.aiBtn}
@@ -1621,7 +1515,7 @@ export default function ActionScreen() {
             disabled={aiLoading}
           >
             <Brain size={18} color="#7C3AED" />
-            <Text style={styles.aiBtnText}>Resumir texto</Text>
+            <Text style={styles.aiBtnText}>{t("action_ocr_summarize")}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1630,7 +1524,7 @@ export default function ActionScreen() {
             disabled={aiLoading}
           >
             <Brain size={18} color="#7C3AED" />
-            <Text style={styles.aiBtnText}>Explicar conteúdo</Text>
+            <Text style={styles.aiBtnText}>{t("action_ocr_explain")}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1639,7 +1533,7 @@ export default function ActionScreen() {
             disabled={aiLoading}
           >
             <Brain size={18} color="#7C3AED" />
-            <Text style={styles.aiBtnText}>Extrair dados importantes</Text>
+            <Text style={styles.aiBtnText}>{t("action_ocr_important")}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1648,38 +1542,53 @@ export default function ActionScreen() {
             disabled={aiLoading}
           >
             <Brain size={18} color="#7C3AED" />
-            <Text style={styles.aiBtnText}>Gerar perguntas</Text>
+            <Text style={styles.aiBtnText}>{t("action_ocr_questions")}</Text>
           </TouchableOpacity>
 
           {aiLoading && <ActivityIndicator color="#7C3AED" />}
         </View>
       )}
 
+      {/* Resultado da IA */}
       {aiResult.length > 0 && (
         <View style={styles.extraBox}>
-          <Text style={styles.extraLabel}>Resultado da IA</Text>
+          <Text style={styles.extraLabel}>{t("action_ocr_ai_result")}</Text>
           <Text style={styles.resultText}>{aiResult}</Text>
         </View>
       )}
 
+      {/* Box premium */}
       {type === "premium" && (
         <View style={styles.premiumBox}>
-          <Text style={styles.premiumTitle}>Batch ilimitado</Text>
+          <Text style={styles.premiumTitle}>
+            {t("action_premium_feature_title")}
+          </Text>
           <Text style={styles.premiumText}>
-            Libere processamento em lote, ferramentas avançadas e uso sem limite diário.
+            {t("action_premium_feature_text")}
           </Text>
         </View>
       )}
 
+      {/* Steps */}
       {type !== "premium" && (
         <View style={styles.steps}>
-          <Text style={styles.stepsTitle}>3 passos</Text>
-          <Step label="Selecionar arquivo" done={!!fileName || selectedFiles.length > 0} />
-          <Step label={type === "ocr" ? "Extrair texto" : "Processar"} done={processed} />
-          <Step label={type === "ocr" ? "Usar IA" : "Compartilhar"} done={!!aiResult || processed} />
+          <Text style={styles.stepsTitle}>{t("action_steps_title")}</Text>
+          <Step
+            label={t("action_step_select")}
+            done={!!fileName || selectedFiles.length > 0}
+          />
+          <Step
+            label={type === "ocr" ? t("action_step_extract") : t("action_step_process")}
+            done={processed}
+          />
+          <Step
+            label={type === "ocr" ? t("action_step_use_ai") : t("action_step_share")}
+            done={!!aiResult || processed}
+          />
         </View>
       )}
 
+      {/* Botão principal */}
       <TouchableOpacity
         style={[styles.mainBtn, loading && styles.disabledBtn]}
         onPress={processFile}
@@ -1691,19 +1600,24 @@ export default function ActionScreen() {
           <>
             <Zap size={18} color="#FFF" />
             <Text style={styles.mainText}>
-              {type === "premium" ? "Ver planos" : type === "ocr" ? "Extrair texto" : "Processar"}
+              {type === "premium"
+                ? t("action_btn_plans")
+                : type === "ocr"
+                ? t("action_btn_extract_text")
+                : t("action_btn_process")}
             </Text>
           </>
         )}
       </TouchableOpacity>
 
+      {/* Botão compartilhar */}
       {(processed || outputUri || fileUri) &&
         type !== "premium" &&
         type !== "ocr" &&
         type !== "preview" && (
           <TouchableOpacity style={styles.secondary} onPress={shareFile}>
             <Share2 size={18} color="#111827" />
-            <Text style={styles.secondaryText}>Compartilhar arquivo</Text>
+            <Text style={styles.secondaryText}>{t("action_btn_share")}</Text>
           </TouchableOpacity>
         )}
 
@@ -1712,6 +1626,7 @@ export default function ActionScreen() {
   );
 }
 
+// ─── Step ──────────────────────────────────────────────────────────────────────
 function Step({ label, done }: { label: string; done: boolean }) {
   return (
     <View style={styles.step}>

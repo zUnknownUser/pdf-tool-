@@ -1,75 +1,104 @@
 import { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
+import { useTranslation } from "react-i18next";
 
-const TIPS = [
-  "Use o Modo Lote pra comprimir vários PDFs de uma vez.",
-  "Dá pra juntar imagens e PDFs em um único arquivo.",
-  "O OCR transforma PDF escaneado em texto pesquisável.",
-  "Você pode proteger qualquer PDF com senha em segundos.",
-  "Dividir um PDF grande facilita o envio por e-mail.",
-  "A câmera do app escaneia documentos direto em PDF.",
-  "Marca d'água protege seus documentos de cópias.",
-  "Dá pra remover páginas específicas sem abrir o arquivo.",
+const TIPS_KEYS = [
+  "home_tip_1",
+  "home_tip_2",
+  "home_tip_3",
+  "home_tip_4",
+  "home_tip_5",
+  "home_tip_6",
+  "home_tip_7",
+  "home_tip_8",
 ];
 
-function getGreeting() {
+function getGreetingKey() {
   const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return "Bom dia 👋";
-  if (hour >= 12 && hour < 18) return "Boa tarde 👋";
-  return "Boa noite 👋";
+
+  if (hour >= 5 && hour < 12) return "greeting_morning";
+  if (hour >= 12 && hour < 18) return "greeting_afternoon";
+
+  return "greeting_evening";
 }
 
-function getDailyTip() {
+function getDailyTipKey() {
   const start = new Date(new Date().getFullYear(), 0, 0);
   const diff = Number(new Date()) - Number(start);
   const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
-  return TIPS[dayOfYear % TIPS.length];
+
+  return TIPS_KEYS[dayOfYear % TIPS_KEYS.length];
 }
 
 export function HomeHeader() {
+  const { t } = useTranslation();
+
   const wave = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(wave, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(wave, { toValue: -1, duration: 200, useNativeDriver: true }),
-        Animated.timing(wave, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(wave, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.delay(2000), 
+        Animated.timing(wave, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(wave, {
+          toValue: -1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(wave, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(wave, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.delay(2000),
       ])
     ).start();
-  }, []);
+  }, [wave]);
 
   const rotate = wave.interpolate({
     inputRange: [-1, 1],
     outputRange: ["-20deg", "20deg"],
   });
 
+  const greeting = t(getGreetingKey()).replace(" 👋", "");
+
   return (
     <>
       <View style={styles.greeting}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={styles.greetingTitle}>{getGreeting().replace(" 👋", "")}</Text>
-         <Animated.Text
-  style={[
-    styles.greetingTitle,
-    {
-      transform: [{ rotate }],
-      display: "flex",
-      transformOrigin: "bottom center", 
-    }
-  ]}
->
-  👋
-</Animated.Text>
+          <Text style={styles.greetingTitle}>{greeting}</Text>
+
+          <Animated.Text
+            style={[
+              styles.greetingTitle,
+              {
+                transform: [{ rotate }],
+              },
+            ]}
+          >
+            👋
+          </Animated.Text>
         </View>
-        <Text style={styles.greetingSubtitle}>O que vamos resolver hoje?</Text>
+
+        <Text style={styles.greetingSubtitle}>
+          {t("greeting_subtitle")}
+        </Text>
       </View>
 
       <View style={styles.tipCard}>
-        <Text style={styles.tipLabel}>💡 Dica do dia</Text>
-        <Text style={styles.tipText}>{getDailyTip()}</Text>
+        <Text style={styles.tipLabel}>{t("tip_label")}</Text>
+
+        <Text style={styles.tipText}>
+          {t(getDailyTipKey())}
+        </Text>
       </View>
     </>
   );

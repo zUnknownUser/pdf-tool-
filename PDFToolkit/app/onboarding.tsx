@@ -12,6 +12,7 @@ import {
 import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTranslation } from "react-i18next";
 import {
   ShieldCheck,
   FileDown,
@@ -29,40 +30,42 @@ const { width } = Dimensions.get("window");
 const ONBOARDING_KEY = "PDF_ONBOARDING_SEEN";
 
 type Slide = {
-  title: string;
-  subtitle: string;
+  titleKey: string;
+  subtitleKey: string;
   icon: LucideIcon;
   color: string;
 };
 
 const slides: Slide[] = [
   {
-    title: "Controle seus PDFs",
-    subtitle: "Comprima, converta e organize arquivos com facilidade.",
+    titleKey: "onboarding_slide_1_title",
+    subtitleKey: "onboarding_slide_1_subtitle",
     icon: ShieldCheck,
     color: "#007AFF",
   },
   {
-    title: "Ferramentas inteligentes",
-    subtitle: "OCR, IA e ações rápidas em uma experiência simples.",
+    titleKey: "onboarding_slide_2_title",
+    subtitleKey: "onboarding_slide_2_subtitle",
     icon: Sparkles,
     color: "#7C3AED",
   },
   {
-    title: "Privacidade primeiro",
-    subtitle: "Processamento local sempre que possível.",
+    titleKey: "onboarding_slide_3_title",
+    subtitleKey: "onboarding_slide_3_subtitle",
     icon: Lock,
     color: "#34C759",
   },
   {
-    title: "Pronto em segundos",
-    subtitle: "Processe e compartilhe o resultado rapidamente.",
+    titleKey: "onboarding_slide_4_title",
+    subtitleKey: "onboarding_slide_4_subtitle",
     icon: Share2,
     color: "#007AFF",
   },
 ];
 
 export default function OnboardingScreen() {
+  const { t } = useTranslation();
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -95,7 +98,7 @@ export default function OnboardingScreen() {
         pagingEnabled
         bounces={false}
         showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item.title}
+        keyExtractor={(item) => item.titleKey}
         onMomentumScrollEnd={(e) => {
           setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / width));
         }}
@@ -153,14 +156,16 @@ export default function OnboardingScreen() {
 
                   <View style={styles.pill}>
                     <ShieldCheck size={13} color="#15803D" />
-                    <Text style={styles.pillText}>Seguro</Text>
+                    <Text style={styles.pillText}>
+                      {t("onboarding_secure")}
+                    </Text>
                   </View>
                 </View>
 
                 <MockFlow color={item.color} index={index} />
 
-                <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.subtitle}>{item.subtitle}</Text>
+                <Text style={styles.title}>{t(item.titleKey)}</Text>
+                <Text style={styles.subtitle}>{t(item.subtitleKey)}</Text>
               </Animated.View>
             </View>
           );
@@ -195,15 +200,18 @@ export default function OnboardingScreen() {
             style={styles.mainBtn}
           >
             <Zap size={18} color="#FFF" />
+
             <Text style={styles.mainText}>
-              {currentIndex === slides.length - 1 ? "Começar" : "Continuar"}
+              {currentIndex === slides.length - 1
+                ? t("onboarding_start")
+                : t("onboarding_continue")}
             </Text>
           </Pressable>
         </Animated.View>
 
         {currentIndex < slides.length - 1 && (
           <TouchableOpacity onPress={finish}>
-            <Text style={styles.skipText}>Pular</Text>
+            <Text style={styles.skipText}>{t("onboarding_skip")}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -212,6 +220,8 @@ export default function OnboardingScreen() {
 }
 
 function MockFlow({ color, index }: { color: string; index: number }) {
+  const { t } = useTranslation();
+
   const progress = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const spin = useRef(new Animated.Value(0)).current;
@@ -286,8 +296,13 @@ function MockFlow({ color, index }: { color: string; index: number }) {
     <Animated.View style={[styles.mockBox, { transform: [{ scale: pulse }] }]}>
       <View style={styles.mockTop}>
         <View>
-          <Text style={styles.mockTitle}>documento.pdf</Text>
-          <Text style={styles.mockSub}>2.4 MB • PDF</Text>
+          <Text style={styles.mockTitle}>
+            {t("onboarding_mock_file_name")}
+          </Text>
+
+          <Text style={styles.mockSub}>
+            {t("onboarding_mock_file_info")}
+          </Text>
         </View>
 
         <View style={[styles.mockIcon, { backgroundColor: `${color}18` }]}>
@@ -310,19 +325,27 @@ function MockFlow({ color, index }: { color: string; index: number }) {
       <View style={styles.steps}>
         <Animated.View style={[styles.step, { opacity: stepOneOpacity }]}>
           <Upload size={16} color={color} />
-          <Text style={styles.stepText}>Selecionar</Text>
+          <Text style={styles.stepText}>
+            {t("onboarding_mock_select")}
+          </Text>
         </Animated.View>
 
         <Animated.View style={[styles.step, { opacity: stepTwoOpacity }]}>
           <Animated.View style={{ transform: [{ rotate }] }}>
             <LoaderCircle size={16} color={color} />
           </Animated.View>
-          <Text style={styles.stepText}>Processar</Text>
+
+          <Text style={styles.stepText}>
+            {t("onboarding_mock_process")}
+          </Text>
         </Animated.View>
 
         <Animated.View style={[styles.step, { opacity: stepThreeOpacity }]}>
           <CheckCircle2 size={16} color="#34C759" />
-          <Text style={styles.stepText}>Pronto</Text>
+
+          <Text style={styles.stepText}>
+            {t("onboarding_mock_done")}
+          </Text>
         </Animated.View>
       </View>
     </Animated.View>
